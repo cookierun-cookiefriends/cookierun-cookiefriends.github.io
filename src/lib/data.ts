@@ -1,6 +1,6 @@
 const BASE = import.meta.env.BASE_URL;
 
-export type BossId = 'dragon' | 'angel' | 'machine';
+export type BossId = 'dragon' | 'angel' | 'machine' | 'licorice';
 
 export interface BossRecord {
   attempts: number;
@@ -11,17 +11,20 @@ export interface PlayerBosses {
   dragon: BossRecord;
   angel: BossRecord;
   machine: BossRecord;
+  licorice: BossRecord;
 }
 
-export interface PlayerRecord {
-  nickname: string;
-  bosses: PlayerBosses;
+export interface RoundMeta {
+  id: string;
+  name: string;
+  activeBosses: BossId[];
 }
 
 export interface SeasonMeta {
   id: string;
   name: string;
   activeBosses: BossId[];
+  rounds: RoundMeta[];
 }
 
 export interface BossMeta {
@@ -32,9 +35,15 @@ export interface BossMeta {
   maxAttempts: number;
 }
 
+export interface PlayerRecord {
+  nickname: string;
+  bosses: PlayerBosses;
+}
+
 export interface Index {
   version: number;
   updatedAt: string;
+  latestRoundId: string;
   latestSeasonId: string;
   seasons: SeasonMeta[];
   players: string[];
@@ -45,12 +54,19 @@ export interface Meta {
   bossOrder: BossId[];
 }
 
-export interface SeasonData {
-  season: SeasonMeta;
+export interface RoundData {
+  round: RoundMeta;
+  season: {
+    id: string;
+    name: string;
+    activeBosses: BossId[];
+  };
   records: PlayerRecord[];
 }
 
 export interface PlayerHistoryEntry {
+  roundId: string;
+  roundName: string;
   seasonId: string;
   seasonName: string;
   activeBosses: BossId[];
@@ -70,7 +86,7 @@ async function fetchJson<T>(path: string): Promise<T> {
 
 export const fetchIndex = () => fetchJson<Index>('data/index.json');
 export const fetchMeta = () => fetchJson<Meta>('data/meta.json');
-export const fetchSeason = (id: string) =>
-  fetchJson<SeasonData>(`data/seasons/${encodeURIComponent(id)}.json`);
+export const fetchRound = (id: string) =>
+  fetchJson<RoundData>(`data/rounds/${encodeURIComponent(id)}.json`);
 export const fetchPlayer = (nickname: string) =>
   fetchJson<PlayerData>(`data/players/${encodeURIComponent(nickname)}.json`);

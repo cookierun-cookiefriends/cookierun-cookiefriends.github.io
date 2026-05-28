@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   fetchIndex,
   fetchMeta,
-  fetchSeason,
+  fetchRound,
   fetchPlayer,
 } from '@/lib/data';
 
@@ -12,10 +12,10 @@ export const useIndex = () =>
 export const useMeta = () =>
   useQuery({ queryKey: ['meta'], queryFn: fetchMeta });
 
-export const useSeason = (id: string | undefined) =>
+export const useRound = (id: string | undefined) =>
   useQuery({
-    queryKey: ['season', id],
-    queryFn: () => fetchSeason(id!),
+    queryKey: ['round', id],
+    queryFn: () => fetchRound(id!),
     enabled: !!id,
   });
 

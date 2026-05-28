@@ -19,6 +19,7 @@ export default function App() {
 
         {/* 길드 토벌전 도메인 */}
         <Route path="raid" element={<Guild />} />
+        <Route path="raid/round/:id" element={<Guild />} />
         <Route path="raid/season/:id" element={<Season />} />
         <Route path="raid/player/:nickname" element={<Player />} />
 

@@ -11,16 +11,27 @@ const writeJson = (p, obj) =>
   fs.writeFileSync(p, JSON.stringify(obj, null, 2) + '\n');
 
 fs.rmSync(OUT, { recursive: true, force: true });
-fs.mkdirSync(path.join(OUT, 'seasons'), { recursive: true });
+fs.mkdirSync(path.join(OUT, 'rounds'), { recursive: true });
 fs.mkdirSync(path.join(OUT, 'players'), { recursive: true });
 
 const seasons = readJson(path.join(SRC, 'seasons.json'));
 const meta = readJson(path.join(SRC, 'meta.json'));
 
-const seasonRecords = {};
+// 라운드 평탄화 + 라운드 → 큰 시즌 매핑
+const allRounds = [];
+const roundToSeason = {};
 for (const season of seasons) {
-  seasonRecords[season.id] = readJson(
-    path.join(SRC, 'records', `${season.id}.json`),
+  for (const round of season.rounds) {
+    allRounds.push(round);
+    roundToSeason[round.id] = season;
+  }
+}
+
+// 라운드별 record 읽기
+const roundRecords = {};
+for (const round of allRounds) {
+  roundRecords[round.id] = readJson(
+    path.join(SRC, 'records', `${round.id}.json`),
   );
 }
 
@@ -32,24 +43,36 @@ function validate() {
         throw new Error(`Season ${season.id} references unknown boss "${boss}"`);
       }
     }
-    for (const r of seasonRecords[season.id]) {
-      if (!r.nickname) throw new Error(`Empty nickname in season ${season.id}`);
-      for (const bossId of validBossIds) {
-        const b = r.bosses[bossId];
-        if (!b || typeof b.attempts !== 'number' || typeof b.damage !== 'number') {
+    for (const round of season.rounds) {
+      for (const boss of round.activeBosses) {
+        if (!validBossIds.has(boss)) {
+          throw new Error(`Round ${round.id} references unknown boss "${boss}"`);
+        }
+        if (!season.activeBosses.includes(boss)) {
           throw new Error(
-            `Invalid boss data for ${r.nickname} in ${season.id}.${bossId}`,
+            `Round ${round.id}'s active boss "${boss}" is not in parent season ${season.id}`,
           );
         }
-        if (b.attempts < 0 || b.attempts > meta.bosses[bossId].maxAttempts) {
-          throw new Error(
-            `attempts out of range for ${r.nickname} in ${season.id}.${bossId}: ${b.attempts}`,
-          );
-        }
-        if (b.damage < 0) {
-          throw new Error(
-            `Negative damage for ${r.nickname} in ${season.id}.${bossId}`,
-          );
+      }
+      for (const r of roundRecords[round.id]) {
+        if (!r.nickname) throw new Error(`Empty nickname in round ${round.id}`);
+        for (const bossId of validBossIds) {
+          const b = r.bosses[bossId];
+          if (!b || typeof b.attempts !== 'number' || typeof b.damage !== 'number') {
+            throw new Error(
+              `Invalid boss data for ${r.nickname} in ${round.id}.${bossId}`,
+            );
+          }
+          if (b.attempts < 0 || b.attempts > meta.bosses[bossId].maxAttempts) {
+            throw new Error(
+              `attempts out of range for ${r.nickname} in ${round.id}.${bossId}: ${b.attempts}`,
+            );
+          }
+          if (b.damage < 0) {
+            throw new Error(
+              `Negative damage for ${r.nickname} in ${round.id}.${bossId}`,
+            );
+          }
         }
       }
     }
@@ -57,27 +80,38 @@ function validate() {
 }
 validate();
 
-for (const season of seasons) {
-  writeJson(path.join(OUT, 'seasons', `${season.id}.json`), {
-    season,
-    records: seasonRecords[season.id],
+// 라운드별 split 파일
+for (const round of allRounds) {
+  const season = roundToSeason[round.id];
+  writeJson(path.join(OUT, 'rounds', `${round.id}.json`), {
+    round,
+    season: {
+      id: season.id,
+      name: season.name,
+      activeBosses: season.activeBosses,
+    },
+    records: roundRecords[round.id],
   });
 }
 
+// 플레이어별 history
 const allNicknames = new Set();
-for (const records of Object.values(seasonRecords)) {
+for (const records of Object.values(roundRecords)) {
   for (const r of records) allNicknames.add(r.nickname);
 }
 
 for (const nickname of allNicknames) {
   const history = [];
-  for (const season of seasons) {
-    const found = seasonRecords[season.id].find((r) => r.nickname === nickname);
+  for (const round of allRounds) {
+    const found = roundRecords[round.id].find((r) => r.nickname === nickname);
     if (found) {
+      const season = roundToSeason[round.id];
       history.push({
+        roundId: round.id,
+        roundName: round.name,
         seasonId: season.id,
         seasonName: season.name,
-        activeBosses: season.activeBosses,
+        activeBosses: round.activeBosses,
         bosses: found.bosses,
       });
     }
@@ -85,21 +119,28 @@ for (const nickname of allNicknames) {
   writeJson(path.join(OUT, 'players', `${nickname}.json`), { nickname, history });
 }
 
+// index: 큰 시즌 + 라운드 인라인
 const index = {
-  version: 1,
+  version: 2,
   updatedAt: new Date().toISOString().slice(0, 10),
+  latestRoundId: allRounds[allRounds.length - 1].id,
   latestSeasonId: seasons[seasons.length - 1].id,
-  seasons: seasons.map(({ id, name, activeBosses }) => ({
-    id,
-    name,
-    activeBosses,
+  seasons: seasons.map((s) => ({
+    id: s.id,
+    name: s.name,
+    activeBosses: s.activeBosses,
+    rounds: s.rounds.map((r) => ({
+      id: r.id,
+      name: r.name,
+      activeBosses: r.activeBosses,
+    })),
   })),
   players: [...allNicknames].sort((a, b) => a.localeCompare(b, 'ko')),
 };
 writeJson(path.join(OUT, 'index.json'), index);
 writeJson(path.join(OUT, 'meta.json'), meta);
 
-console.log(`✓ ${seasons.length} season files → data/seasons/`);
+console.log(`✓ ${seasons.length} season(s), ${allRounds.length} round(s) → data/rounds/`);
 console.log(`✓ ${allNicknames.size} player files → data/players/`);
-console.log(`✓ index.json (latest: ${index.latestSeasonId}, ${index.players.length} players)`);
+console.log(`✓ index.json (latest round: ${index.latestRoundId}, ${index.players.length} players)`);
 console.log(`✓ meta.json (${Object.keys(meta.bosses).length} bosses)`);
