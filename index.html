@@ -1,10 +1,31 @@
 <!doctype html>
-<html lang="ko" class="dark">
+<html lang="ko">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="쿠키런:킹덤 길드 토벌전 기록 — 시즌별 보스 딜량 추적" />
     <title>쿠키프렌즈 | 길드 토벌전 기록</title>
+    <script>
+      // 페이지 로드 즉시 쿠키에서 theme 읽어서 html class 결정 (flash 방지)
+      (function () {
+        try {
+          var m = document.cookie.match(/cookiefriends_theme=([^;]+)/);
+          var theme = 'system';
+          if (m) {
+            theme = JSON.parse(decodeURIComponent(m[1])).state.theme;
+          }
+          var resolved =
+            theme === 'system'
+              ? window.matchMedia('(prefers-color-scheme: dark)').matches
+                ? 'dark'
+                : 'light'
+              : theme;
+          if (resolved === 'dark') {
+            document.documentElement.classList.add('dark');
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
