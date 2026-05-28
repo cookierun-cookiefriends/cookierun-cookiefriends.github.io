@@ -1,0 +1,29 @@
+[
+  {
+    "nickname": "예시1",
+    "bosses": {
+      "dragon": { "attempts": 9, "damage": 165000000000 },
+      "angel": { "attempts": 0, "damage": 0 },
+      "machine": { "attempts": 0, "damage": 0 },
+      "licorice": { "attempts": 9, "damage": 130000000000 }
+    }
+  },
+  {
+    "nickname": "예시2",
+    "bosses": {
+      "dragon": { "attempts": 9, "damage": 115000000000 },
+      "angel": { "attempts": 0, "damage": 0 },
+      "machine": { "attempts": 0, "damage": 0 },
+      "licorice": { "attempts": 9, "damage": 90000000000 }
+    }
+  },
+  {
+    "nickname": "예시3",
+    "bosses": {
+      "dragon": { "attempts": 9, "damage": 55000000000 },
+      "angel": { "attempts": 0, "damage": 0 },
+      "machine": { "attempts": 0, "damage": 0 },
+      "licorice": { "attempts": 9, "damage": 40000000000 }
+    }
+  }
+]
