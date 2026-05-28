@@ -1,0 +1,30 @@
+{
+  "bosses": {
+    "dragon": {
+      "id": "dragon",
+      "name": "드래곤",
+      "fullName": "레드벨벳 케이크 드래곤",
+      "color": "#ef4444",
+      "maxAttempts": 9
+    },
+    "angel": {
+      "id": "angel",
+      "name": "대천사",
+      "fullName": "운명의 대천사",
+      "color": "#eab308",
+      "maxAttempts": 9
+    },
+    "machine": {
+      "id": "machine",
+      "name": "기계신",
+      "fullName": "덩어리진 감초바다의 심연",
+      "color": "#3b82f6",
+      "maxAttempts": 9
+    }
+  },
+  "bossOrder": [
+    "dragon",
+    "angel",
+    "machine"
+  ]
+}

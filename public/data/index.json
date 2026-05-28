@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "updatedAt": "2026-05-28",
+  "latestSeasonId": "demo-3",
+  "seasons": [
+    {
+      "id": "demo-1",
+      "name": "예시 시즌 1",
+      "activeBosses": [
+        "dragon",
+        "angel"
+      ]
+    },
+    {
+      "id": "demo-2",
+      "name": "예시 시즌 2",
+      "activeBosses": [
+        "angel",
+        "machine"
+      ]
+    },
+    {
+      "id": "demo-3",
+      "name": "예시 시즌 3",
+      "activeBosses": [
+        "dragon",
+        "machine"
+      ]
+    }
+  ],
+  "players": [
+    "예시1",
+    "예시2",
+    "예시3"
+  ]
+}

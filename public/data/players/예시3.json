@@ -1,0 +1,71 @@
+{
+  "nickname": "예시3",
+  "history": [
+    {
+      "seasonId": "demo-1",
+      "seasonName": "예시 시즌 1",
+      "activeBosses": [
+        "dragon",
+        "angel"
+      ],
+      "bosses": {
+        "dragon": {
+          "attempts": 5,
+          "damage": 30000000000
+        },
+        "angel": {
+          "attempts": 9,
+          "damage": 40000000000
+        },
+        "machine": {
+          "attempts": 0,
+          "damage": 0
+        }
+      }
+    },
+    {
+      "seasonId": "demo-2",
+      "seasonName": "예시 시즌 2",
+      "activeBosses": [
+        "angel",
+        "machine"
+      ],
+      "bosses": {
+        "dragon": {
+          "attempts": 0,
+          "damage": 0
+        },
+        "angel": {
+          "attempts": 0,
+          "damage": 0
+        },
+        "machine": {
+          "attempts": 0,
+          "damage": 0
+        }
+      }
+    },
+    {
+      "seasonId": "demo-3",
+      "seasonName": "예시 시즌 3",
+      "activeBosses": [
+        "dragon",
+        "machine"
+      ],
+      "bosses": {
+        "dragon": {
+          "attempts": 9,
+          "damage": 50000000000
+        },
+        "angel": {
+          "attempts": 0,
+          "damage": 0
+        },
+        "machine": {
+          "attempts": 9,
+          "damage": 60000000000
+        }
+      }
+    }
+  ]
+}

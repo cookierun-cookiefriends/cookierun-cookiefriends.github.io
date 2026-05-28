@@ -6,7 +6,3 @@ dist/
 .env
 .env.local
 .env.*.local
-
-# Build output of scripts/build-data.mjs.
-# Source of truth is data-source/; CI regenerates this on build.
-public/data/

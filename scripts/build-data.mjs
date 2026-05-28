@@ -1,8 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const SRC = path.resolve('data-source');
-const OUT = path.resolve('public/data');
+const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const SRC = path.join(PROJECT_ROOT, 'data-source');
+const OUT = path.join(PROJECT_ROOT, 'public/data');
 
 const readJson = (p) => JSON.parse(fs.readFileSync(p, 'utf-8'));
 const writeJson = (p, obj) =>

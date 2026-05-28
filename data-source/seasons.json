@@ -1,42 +1,17 @@
 [
   {
-    "id": "21-1",
-    "name": "시즌 21-1",
-    "activeBosses": [
-      "angel",
-      "machine"
-    ]
+    "id": "demo-1",
+    "name": "예시 시즌 1",
+    "activeBosses": ["dragon", "angel"]
   },
   {
-    "id": "21-2",
-    "name": "시즌 21-2",
-    "activeBosses": [
-      "dragon",
-      "machine"
-    ]
+    "id": "demo-2",
+    "name": "예시 시즌 2",
+    "activeBosses": ["angel", "machine"]
   },
   {
-    "id": "21-3",
-    "name": "시즌 21-3",
-    "activeBosses": [
-      "dragon",
-      "angel"
-    ]
-  },
-  {
-    "id": "21-4",
-    "name": "시즌 21-4",
-    "activeBosses": [
-      "angel",
-      "machine"
-    ]
-  },
-  {
-    "id": "22-1",
-    "name": "시즌 22-1",
-    "activeBosses": [
-      "dragon",
-      "machine"
-    ]
+    "id": "demo-3",
+    "name": "예시 시즌 3",
+    "activeBosses": ["dragon", "machine"]
   }
 ]
