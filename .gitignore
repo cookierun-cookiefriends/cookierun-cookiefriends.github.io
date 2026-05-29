@@ -10,3 +10,10 @@ dist/
 # 빌드 산출물 — data-source/에서 build:data가 생성. CI 배포 시 재생성됨.
 # 소스(single source of truth)는 data-source/ 뿐.
 public/data/
+
+# OCR 도구 (Python) — 로컬 설정만 무시 (코드·닉목록은 추적)
+.venv/
+__pycache__/
+*.pyc
+ocr/ocr_regions.json
+.ocr-temp/

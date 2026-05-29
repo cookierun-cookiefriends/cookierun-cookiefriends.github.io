@@ -17,14 +17,14 @@
     "machine": {
       "id": "machine",
       "name": "기계신",
-      "fullName": "기계신",
+      "fullName": "영원한 시간 속 공허의 기계신",
       "color": "#3b82f6",
       "maxAttempts": 9
     },
     "licorice": {
       "id": "licorice",
       "name": "감초",
-      "fullName": "감초 보스",
+      "fullName": "덩어리진 감초바다의 심연",
       "color": "#a855f7",
       "maxAttempts": 9
     }

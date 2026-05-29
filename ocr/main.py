@@ -1,0 +1,731 @@
+"""쿠키프렌즈 토벌전 OCR 도구.
+
+게임 "토벌전 참여 현황" 화면에서 첫 줄의 셀(닉네임 / 보스별 횟수·딜량)을 한 번 지정하면,
+'행 간격'으로 아래 줄을 자동 복제하여 한 화면의 모든 인원을 셀별 OCR한다.
+결과를 data-source/records/{시즌ID}.json 형태로 내보낸다.
+
+실행: 프로젝트 루트에서  py ocr/main.py   (또는 ocr 폴더에서  py main.py)
+설치: pip install -r ocr/requirements.txt   (UI만 보려면 pip install PyQt6)
+
+흐름:
+  1) 시즌 ID/이름, 활성 보스 체크, 한 화면 인원 설정
+  2) "영역 설정" → 게임 화면 위에서 첫 줄 셀 박스들을 드래그/리사이즈,
+     마우스 휠로 행 간격 조절(아래 줄 미리보기) → S 저장
+  3) "캡처 & 인식" → 셀별 OCR로 표 채움 → 검수
+  4) JSON 내보내기 (스크롤 후 다시 캡처하면 새 인원만 추가)
+"""
+
+import sys
+import re
+import json
+import difflib
+from pathlib import Path
+
+from PyQt6.QtWidgets import (
+    QApplication,
+    QMainWindow,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QFormLayout,
+    QLabel,
+    QLineEdit,
+    QCheckBox,
+    QPushButton,
+    QSpinBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QGroupBox,
+    QHeaderView,
+    QMessageBox,
+    QFrame,
+)
+from PyQt6.QtCore import Qt, QRect, QPoint
+from PyQt6.QtGui import QGuiApplication, QPainter, QColor, QPen
+
+BOSSES = [
+    ("dragon", "드래곤"),
+    ("angel", "대천사"),
+    ("machine", "기계신"),
+    ("licorice", "감초"),
+]
+BOSS_NAME = dict(BOSSES)
+
+OCR_DIR = Path(__file__).resolve().parent          # ocr/
+REPO_ROOT = OCR_DIR.parent                          # 프로젝트 루트
+RECORDS_DIR = REPO_ROOT / "data-source" / "records"  # 출력은 프로젝트 데이터로
+REGIONS_PATH = OCR_DIR / "ocr_regions.json"          # 로컬 설정은 ocr/ 안에
+NICKNAMES_PATH = OCR_DIR / "ocr_nicknames.txt"
+
+
+
+def cells_for(boss_ids):
+    """활성 보스에 따른 첫 줄 셀 정의 [(key, 표시명)]. key의 '#'은 보스/항목 구분."""
+    cells = [("nick", "닉네임")]
+    for bid in boss_ids:
+        cells.append((f"{bid}#att", f"{BOSS_NAME[bid]} 횟수"))
+        cells.append((f"{bid}#dmg", f"{BOSS_NAME[bid]} 딜량"))
+    return cells
+
+
+# ---------- 캡처 / OCR ----------
+def capture_region(rect: QRect):
+    import mss
+    import numpy as np
+
+    with mss.mss() as sct:
+        raw = sct.grab(
+            {
+                "left": rect.x(),
+                "top": rect.y(),
+                "width": rect.width(),
+                "height": rect.height(),
+            }
+        )
+    return np.array(raw)[:, :, :3]
+
+
+def _preprocess(img):
+    import cv2
+
+    h, w = img.shape[:2]
+    return cv2.resize(img, (w * 4, h * 4), interpolation=cv2.INTER_CUBIC)
+
+
+def _preprocess_number(img):
+    """딜량 셀: 흰 글자만 추출 + 콤마(작은 점) 제거 → 흰 배경에 검은 숫자."""
+    import cv2
+
+    h, w = img.shape[:2]
+    big = cv2.resize(img, (w * 4, h * 4), interpolation=cv2.INTER_CUBIC)
+    gray = cv2.cvtColor(big, cv2.COLOR_BGR2GRAY)
+    _, mask = cv2.threshold(gray, 170, 255, cv2.THRESH_BINARY)  # 흰 글자 = 255
+    # 숫자보다 키 작은 덩어리(콤마)는 제거 — 콤마가 숫자로 오인되는 것 방지
+    cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if cnts:
+        max_h = max(cv2.boundingRect(c)[3] for c in cnts)
+        for c in cnts:
+            if cv2.boundingRect(c)[3] < max_h * 0.55:
+                cv2.drawContours(mask, [c], -1, 0, -1)
+    return cv2.bitwise_not(mask)  # 흰 배경 + 검은 숫자
+
+
+_easy_engine = None
+_rapid_engine = None
+
+
+def get_text(img):
+    """닉네임 셀 → 인식 텍스트 줄들(위→아래). 한글+영어 (EasyOCR)."""
+    global _easy_engine
+    if _easy_engine is None:
+        import easyocr
+
+        _easy_engine = easyocr.Reader(["ko", "en"], gpu=False)
+    result = _easy_engine.readtext(_preprocess(img))
+    lines = sorted(
+        (([p[1] for p in box], str(text).strip()) for box, text, _c in result),
+        key=lambda t: sum(t[0]) / len(t[0]),
+    )
+    return [t[1] for t in lines if t[1]]
+
+
+def get_numbers(img):
+    """딜량 셀 → 숫자 문자열 (RapidOCR, 흰 글자 + 콤마 제거 전처리)."""
+    global _rapid_engine
+    if _rapid_engine is None:
+        from rapidocr_onnxruntime import RapidOCR
+
+        _rapid_engine = RapidOCR()
+    out = _rapid_engine(_preprocess_number(img))
+    result = out[0] if isinstance(out, tuple) else out
+    if not result:
+        return ""
+    return " ".join(str(item[1]) for item in result)
+
+
+def parse_count(text):
+    """횟수 문자열 → 0~9. '미참여'/숫자 없음 → 0."""
+    if "참여" in text:
+        return 0
+    digits = re.sub(r"\D", "", text)
+    return min(int(digits), 9) if digits else 0
+
+
+def parse_damage(text):
+    """딜량 문자열 → 정수. '미참여'·공란·노이즈(100만 미만)는 0."""
+    if "참여" in text:
+        return 0
+    digits = re.sub(r"\D", "", text)
+    val = int(digits) if digits else 0
+    return val if val >= 1_000_000 else 0
+
+
+def pick_nickname(lines):
+    """닉네임 셀 줄들 → 닉네임 (칭호가 섞이면 아래쪽 줄을 채택)."""
+    cands = [ln.strip() for ln in lines if re.search(r"[가-힣A-Za-z0-9]", ln)]
+    return cands[-1] if cands else ""
+
+
+def load_known_nicknames():
+    """ocr_nicknames.txt(한 줄당 한 닉)에서 등록 닉 목록 로드. 없으면 빈 리스트."""
+    if NICKNAMES_PATH.exists():
+        return [
+            ln.strip()
+            for ln in NICKNAMES_PATH.read_text(encoding="utf-8").splitlines()
+            if ln.strip()
+        ]
+    return []
+
+
+_CHO = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ"
+_JUNG = "ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ"
+_JONG = [
+    "", "ㄱ", "ㄲ", "ㄳ", "ㄴ", "ㄵ", "ㄶ", "ㄷ", "ㄹ", "ㄺ", "ㄻ", "ㄼ", "ㄽ",
+    "ㄾ", "ㄿ", "ㅀ", "ㅁ", "ㅂ", "ㅄ", "ㅅ", "ㅆ", "ㅇ", "ㅈ", "ㅊ", "ㅋ",
+    "ㅌ", "ㅍ", "ㅎ",
+]
+
+
+def _decompose(s):
+    """한글을 자모로 분해 (영문/숫자는 소문자). 한글 유사도 비교용."""
+    out = []
+    for ch in s:
+        if "가" <= ch <= "힣":
+            code = ord(ch) - 0xAC00
+            out.append(_CHO[code // 588])
+            out.append(_JUNG[(code % 588) // 28])
+            out.append(_JONG[code % 28])
+        else:
+            out.append(ch.lower())
+    return "".join(out)
+
+
+def match_nickname(nick, known):
+    """OCR 닉을 등록 길드원 목록과 자모 단위로 비교해 가장 비슷한 닉으로 무조건 치환.
+
+    목록(ocr_nicknames.txt)이 있으면 OCR이 깨져 읽어도 항상 목록 안의 닉이 들어간다.
+    목록에 없는 신규 길드원은 엉뚱하게 매칭될 수 있으니 목록에 미리 등록해 둘 것.
+    """
+    if not nick or not known:
+        return nick
+    target = _decompose(nick)
+    best, best_score = nick, -1.0
+    for k in known:
+        score = difflib.SequenceMatcher(None, target, _decompose(k)).ratio()
+        if score > best_score:
+            best_score, best = score, k
+    return best
+
+
+def _shift(box, dy):
+    return QRect(box[0], box[1] + dy, box[2], box[3])
+
+
+def capture_with_regions(data, boss_ids):
+    """첫 줄 셀 + 행 간격으로 모든 줄을 셀별 OCR → 레코드 리스트."""
+    boxes = data["boxes"]
+    rh = data["row_height"]
+    rows = data["rows"]
+    known = load_known_nicknames()
+    records = []
+    for r in range(rows):
+        dy = rh * r
+        nb = boxes.get("nick")
+        nick = pick_nickname(get_text(capture_region(_shift(nb, dy)))) if nb else ""
+        nick = match_nickname(nick, known)
+        if not nick:
+            continue
+        boss_data = {bid: {"attempts": 0, "damage": 0} for bid, _ in BOSSES}
+        for bid in boss_ids:
+            ab = boxes.get(f"{bid}#att")
+            db = boxes.get(f"{bid}#dmg")
+            # 회수("9회")는 한글 섞여 EasyOCR이 안정적, 딜량(긴 숫자)은 RapidOCR
+            att = (
+                parse_count(" ".join(get_text(capture_region(_shift(ab, dy)))))
+                if ab
+                else 0
+            )
+            dmg = parse_damage(get_numbers(capture_region(_shift(db, dy)))) if db else 0
+            boss_data[bid] = {"attempts": att, "damage": dmg}
+        records.append({"nickname": nick, "bosses": boss_data})
+    return records
+
+
+def save_regions(data):
+    REGIONS_PATH.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def load_regions():
+    if REGIONS_PATH.exists():
+        try:
+            return json.loads(REGIONS_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+    return None
+
+
+# ---------- 영역 편집 오버레이 ----------
+class RegionEditor(QWidget):
+    """전체화면 오버레이 — 첫 줄 셀 박스를 드래그/리사이즈하고 휠로 행 간격 조절."""
+
+    HANDLE = 16
+
+    def __init__(self, cells, initial, rows, row_height, on_save):
+        super().__init__()
+        self.cells = cells
+        self.rows = rows
+        self.row_height = row_height or 110
+        self.on_save = on_save
+        self.active = None
+        self.offset = QPoint()
+
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        screen = QGuiApplication.primaryScreen().geometry()
+        self.setGeometry(screen)
+        self.setMouseTracking(True)
+
+        # 첫 줄 박스: 저장값 우선, 없으면 가로로 기본 배치
+        self.boxes = {}
+        W, H = screen.width(), screen.height()
+        x = int(W * 0.1)
+        for key, _name in cells:
+            if initial and key in initial:
+                self.boxes[key] = QRect(*initial[key])
+            else:
+                w = 220 if key == "nick" else (80 if key.endswith("att") else 210)
+                self.boxes[key] = QRect(x, int(H * 0.16), w, 48)
+                x += w + 16
+
+    def _handle(self, rect: QRect) -> QRect:
+        return QRect(
+            rect.right() - self.HANDLE, rect.bottom() - self.HANDLE, self.HANDLE, self.HANDLE
+        )
+
+    def paintEvent(self, _e):
+        p = QPainter(self)
+        p.fillRect(self.rect(), QColor(20, 16, 30, 110))
+        for key, name in self.cells:
+            rect = self.boxes[key]
+            # 아래 줄 미리보기 — 밝은 하늘색 + 채움으로 잘 보이게
+            for r in range(1, self.rows):
+                rr = QRect(
+                    rect.x(), rect.y() + self.row_height * r, rect.width(), rect.height()
+                )
+                p.fillRect(rr, QColor(120, 220, 255, 40))
+                p.setPen(QPen(QColor(140, 225, 255), 2, Qt.PenStyle.DashLine))
+                p.drawRect(rr)
+            # 첫 줄 (진하게)
+            p.fillRect(rect, QColor(232, 146, 58, 35))
+            p.setPen(QPen(QColor("#e8923a"), 2))
+            p.drawRect(rect)
+            p.setPen(QColor("#ffffff"))
+            p.drawText(rect.x() + 2, rect.y() - 5, name)
+            p.fillRect(self._handle(rect), QColor("#e8923a"))
+        p.setPen(QColor("#ffffff"))
+        p.drawText(
+            self.rect().adjusted(0, 16, -16, 0),
+            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter,
+            f"첫 줄 셀을 맞추세요  ·  마우스 휠 = 행 간격({self.row_height}px)  ·  S: 저장  ·  Esc: 취소",
+        )
+
+    def wheelEvent(self, e):
+        step = 5 if e.angleDelta().y() > 0 else -5
+        self.row_height = max(20, self.row_height + step)
+        self.update()
+
+    def mousePressEvent(self, e):
+        pos = e.position().toPoint()
+        for key, _name in reversed(self.cells):
+            rect = self.boxes[key]
+            if self._handle(rect).contains(pos):
+                self.active = (key, "resize")
+                return
+            if rect.contains(pos):
+                self.active = (key, "move")
+                self.offset = pos - rect.topLeft()
+                return
+
+    def mouseMoveEvent(self, e):
+        if not self.active:
+            return
+        key, mode = self.active
+        rect = self.boxes[key]
+        pos = e.position().toPoint()
+        if mode == "move":
+            rect.moveTopLeft(pos - self.offset)
+        else:
+            rect.setRight(max(pos.x(), rect.x() + 30))
+            rect.setBottom(max(pos.y(), rect.y() + 24))
+        self.update()
+
+    def mouseReleaseEvent(self, _e):
+        self.active = None
+
+    def keyPressEvent(self, e):
+        if e.key() == Qt.Key.Key_S:
+            self.on_save(
+                {
+                    "rows": self.rows,
+                    "row_height": self.row_height,
+                    "resolution": [self.width(), self.height()],
+                    "boxes": {
+                        k: [r.x(), r.y(), r.width(), r.height()]
+                        for k, r in self.boxes.items()
+                    },
+                }
+            )
+            self.close()
+        elif e.key() == Qt.Key.Key_Escape:
+            self.close()
+
+
+# ---------- 메인 윈도우 ----------
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("쿠키프렌즈 토벌전 OCR")
+        self.resize(1120, 720)
+        self.boss_checks: dict[str, QCheckBox] = {}
+        self._build_ui()
+        self.boss_checks["machine"].setChecked(True)
+        self.boss_checks["licorice"].setChecked(True)
+        self._rebuild_columns()
+
+    def _build_ui(self):
+        central = QWidget()
+        self.setCentralWidget(central)
+        root = QHBoxLayout(central)
+        root.setContentsMargins(16, 16, 16, 16)
+        root.setSpacing(16)
+        main = self._build_main()
+        side = self._build_sidebar()
+        root.addWidget(side, 0)
+        root.addWidget(main, 1)
+
+    def _build_sidebar(self) -> QWidget:
+        side = QWidget()
+        side.setObjectName("sidebar")
+        side.setFixedWidth(300)
+        lay = QVBoxLayout(side)
+        lay.setContentsMargins(18, 18, 18, 18)
+        lay.setSpacing(14)
+
+        lay.addWidget(self._brand("쿠키프렌즈", "brand"))
+        lay.addWidget(self._brand("토벌전 OCR 입력 도구", "brandSub"))
+        lay.addWidget(self._hline())
+
+        season_box = QGroupBox("시즌 정보")
+        form = QFormLayout(season_box)
+        form.setSpacing(8)
+        self.season_id = QLineEdit()
+        self.season_id.setPlaceholderText("예: 30-4")
+        self.season_name = QLineEdit()
+        self.season_name.setPlaceholderText("예: 비상하는 운명의 시즌 30-4")
+        self.rows_spin = QSpinBox()
+        self.rows_spin.setRange(1, 12)
+        self.rows_spin.setValue(4)
+        form.addRow("시즌 ID", self.season_id)
+        form.addRow("시즌 이름", self.season_name)
+        form.addRow("한 화면 인원", self.rows_spin)
+        lay.addWidget(season_box)
+
+        boss_box = QGroupBox("활성 보스 (이 시즌)")
+        bl = QVBoxLayout(boss_box)
+        bl.setSpacing(4)
+        for bid, name in BOSSES:
+            cb = QCheckBox(f"{name}  ({bid})")
+            cb.toggled.connect(self._rebuild_columns)
+            self.boss_checks[bid] = cb
+            bl.addWidget(cb)
+        lay.addWidget(boss_box)
+
+        self.btn_regions = QPushButton("영역 설정")
+        self.btn_regions.clicked.connect(self._on_set_regions)
+        self.btn_capture = QPushButton("캡처 & 인식")
+        self.btn_capture.setObjectName("primary")
+        self.btn_capture.clicked.connect(self._on_capture)
+        self.btn_add = QPushButton("행 추가")
+        self.btn_add.clicked.connect(lambda: self._add_row())
+        lay.addWidget(self.btn_regions)
+        lay.addWidget(self.btn_capture)
+        lay.addWidget(self.btn_add)
+        lay.addStretch(1)
+
+        self.status = QLabel("준비됨")
+        self.status.setObjectName("status")
+        self.status.setWordWrap(True)
+        lay.addWidget(self.status)
+        return side
+
+    def _build_main(self) -> QWidget:
+        main = QWidget()
+        lay = QVBoxLayout(main)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(12)
+
+        header = QLabel("토벌전 기록 입력")
+        header.setObjectName("pageTitle")
+        lay.addWidget(header)
+
+        self.table = QTableWidget(0, 1)
+        self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(40)
+        lay.addWidget(self.table, 1)
+
+        bottom = QHBoxLayout()
+        self.count_label = QLabel("0명 입력됨")
+        self.count_label.setObjectName("status")
+        bottom.addWidget(self.count_label)
+        bottom.addStretch(1)
+        btn_del = QPushButton("선택 행 삭제")
+        btn_del.clicked.connect(self._delete_selected)
+        btn_clear = QPushButton("전체 비우기")
+        btn_clear.clicked.connect(self._clear_rows)
+        btn_export = QPushButton("JSON 내보내기")
+        btn_export.setObjectName("primary")
+        btn_export.clicked.connect(self._export)
+        bottom.addWidget(btn_del)
+        bottom.addWidget(btn_clear)
+        bottom.addWidget(btn_export)
+        lay.addLayout(bottom)
+        return main
+
+    def _brand(self, text, obj) -> QLabel:
+        lb = QLabel(text)
+        lb.setObjectName(obj)
+        return lb
+
+    def _hline(self) -> QFrame:
+        line = QFrame()
+        line.setFrameShape(QFrame.Shape.HLine)
+        line.setObjectName("hline")
+        return line
+
+    # ----- 동작 -----
+    def active_bosses(self) -> list[str]:
+        return [bid for bid, _ in BOSSES if self.boss_checks[bid].isChecked()]
+
+    def _rebuild_columns(self):
+        if not hasattr(self, "table"):
+            return
+        bosses = self.active_bosses()
+        headers = ["닉네임"]
+        for bid in bosses:
+            headers.append(f"{BOSS_NAME[bid]} 횟수")
+            headers.append(f"{BOSS_NAME[bid]} 딜량")
+        self.table.setColumnCount(len(headers))
+        self.table.setHorizontalHeaderLabels(headers)
+        header = self.table.horizontalHeader()
+        Mode = QHeaderView.ResizeMode
+        header.setSectionResizeMode(0, Mode.Interactive)
+        self.table.setColumnWidth(0, 150)
+        col = 1
+        for _ in bosses:
+            header.setSectionResizeMode(col, Mode.ResizeToContents)
+            header.setSectionResizeMode(col + 1, Mode.Stretch)
+            col += 2
+
+    def _add_row(self, nickname: str = "", values: dict | None = None):
+        bosses = self.active_bosses()
+        row = self.table.rowCount()
+        self.table.insertRow(row)
+        self.table.setItem(row, 0, QTableWidgetItem(nickname))
+        col = 1
+        for bid in bosses:
+            v = (values or {}).get(bid, {})
+            self.table.setItem(row, col, QTableWidgetItem(str(v.get("attempts", ""))))
+            self.table.setItem(row, col + 1, QTableWidgetItem(str(v.get("damage", ""))))
+            col += 2
+        self._update_count()
+
+    def _delete_selected(self):
+        rows = sorted({i.row() for i in self.table.selectedIndexes()}, reverse=True)
+        for r in rows:
+            self.table.removeRow(r)
+        self._update_count()
+
+    def _clear_rows(self):
+        self.table.setRowCount(0)
+        self._update_count()
+
+    def _update_count(self):
+        n = sum(
+            1
+            for r in range(self.table.rowCount())
+            if (self.table.item(r, 0) and self.table.item(r, 0).text().strip())
+        )
+        self.count_label.setText(f"{n}명 입력됨")
+
+    def keyPressEvent(self, e):
+        if e.key() == Qt.Key.Key_Delete and self.table.hasFocus():
+            self._delete_selected()
+        else:
+            super().keyPressEvent(e)
+
+    # ----- 영역 설정 / 캡처 -----
+    def _on_set_regions(self):
+        if not self.active_bosses():
+            QMessageBox.warning(self, "확인", "활성 보스를 먼저 체크하세요.")
+            return
+        saved = load_regions()
+        initial = saved["boxes"] if saved else None
+        rh = saved.get("row_height") if saved else None
+        self._editor = RegionEditor(
+            cells_for(self.active_bosses()),
+            initial,
+            self.rows_spin.value(),
+            rh,
+            self._on_regions_saved,
+        )
+        self._editor.show()
+
+    def _on_regions_saved(self, data):
+        save_regions(data)
+        self.status.setText(
+            f"영역 저장됨 (인원 {data['rows']}, 행 간격 {data['row_height']}px)"
+        )
+
+    def _on_capture(self):
+        saved = load_regions()
+        if not saved:
+            QMessageBox.warning(self, "확인", "먼저 '영역 설정'으로 캡처 영역을 지정하세요.")
+            return
+        self.status.setText("인식 중... (첫 실행은 모델 로딩으로 느릴 수 있음)")
+        QApplication.processEvents()
+        try:
+            records = capture_with_regions(saved, self.active_bosses())
+        except ImportError:
+            QMessageBox.critical(
+                self, "설치 필요", "OCR 라이브러리 미설치\npip install -r requirements.txt"
+            )
+            return
+        except Exception as ex:  # noqa: BLE001
+            QMessageBox.critical(self, "오류", f"캡처 실패:\n{ex}")
+            return
+        existing = {
+            self.table.item(r, 0).text().strip()
+            for r in range(self.table.rowCount())
+            if self.table.item(r, 0)
+        }
+        added = 0
+        for rec in records:
+            nick = rec["nickname"]
+            if not nick or nick in existing:
+                continue
+            self._add_row(nick, rec["bosses"])
+            existing.add(nick)
+            added += 1
+        self.status.setText(f"인식 완료: {added}명 추가됨 — 표에서 검수/수정하세요")
+
+    # ----- 내보내기 -----
+    def _collect_records(self) -> list[dict]:
+        bosses = self.active_bosses()
+        records = []
+        for r in range(self.table.rowCount()):
+            nick_item = self.table.item(r, 0)
+            nick = nick_item.text().strip() if nick_item else ""
+            if not nick:
+                continue
+            boss_data = {bid: {"attempts": 0, "damage": 0} for bid, _ in BOSSES}
+            col = 1
+            for bid in bosses:
+                boss_data[bid] = {
+                    "attempts": self._cell_int(r, col),
+                    "damage": self._cell_int(r, col + 1),
+                }
+                col += 2
+            records.append({"nickname": nick, "bosses": boss_data})
+        return records
+
+    def _cell_int(self, row: int, col: int) -> int:
+        item = self.table.item(row, col)
+        if not item:
+            return 0
+        text = item.text().strip().replace(",", "")
+        try:
+            return int(text)
+        except ValueError:
+            return 0
+
+    def _export(self):
+        sid = self.season_id.text().strip()
+        if not sid:
+            QMessageBox.warning(self, "확인", "시즌 ID를 입력해주세요 (예: 30-4).")
+            return
+        records = self._collect_records()
+        if not records:
+            QMessageBox.warning(self, "확인", "입력된 데이터가 없습니다.")
+            return
+        RECORDS_DIR.mkdir(parents=True, exist_ok=True)
+        out = RECORDS_DIR / f"{sid}.json"
+        out.write_text(
+            json.dumps(records, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+        self.status.setText(f"저장됨: {out.name} ({len(records)}명)")
+        QMessageBox.information(
+            self,
+            "완료",
+            f"{out}\n\n{len(records)}명 저장됨.\n"
+            f"seasons.json 에 시즌 메타 추가 후 build:data 실행하세요.",
+        )
+
+
+QSS = """
+QMainWindow, QWidget { background: #2a2036; color: #f5ecf5; font-size: 13px; }
+#sidebar { background: #342843; border: 1px solid #463655; border-radius: 14px; }
+#brand { font-size: 18px; font-weight: 700; color: #f5ecf5; }
+#brandSub { font-size: 11px; color: #cbbdd6; }
+#pageTitle { font-size: 22px; font-weight: 700; }
+#status { font-size: 11px; color: #cbbdd6; }
+#hline { color: #463655; }
+QGroupBox {
+    border: 1px solid #463655; border-radius: 10px; margin-top: 10px;
+    padding: 12px 10px 10px 10px; font-weight: 600;
+}
+QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; color: #cbbdd6; }
+QLineEdit, QSpinBox {
+    background: #241b2e; border: 1px solid #463655; border-radius: 8px;
+    padding: 6px 8px; color: #f5ecf5;
+}
+QLineEdit:focus, QSpinBox:focus { border-color: #e8923a; }
+QCheckBox { padding: 3px 0; }
+QPushButton {
+    background: #423152; border: 1px solid #463655; border-radius: 9px;
+    padding: 9px 12px; color: #f5ecf5; font-weight: 600;
+}
+QPushButton:hover { background: #503c63; }
+QPushButton#primary { background: #e8923a; border: none; color: #241b2e; }
+QPushButton#primary:hover { background: #f0a352; }
+QTableWidget {
+    background: #342843; border: 1px solid #463655; border-radius: 12px;
+    gridline-color: #463655;
+}
+QHeaderView::section {
+    background: #423152; color: #cbbdd6; padding: 8px;
+    border: none; border-bottom: 1px solid #463655; font-weight: 600;
+}
+QTableWidget::item { padding: 6px; }
+QTableWidget::item:selected { background: #e8923a; color: #241b2e; }
+QTableWidget QLineEdit {
+    background: #ffffff; color: #1a1420; border: 2px solid #e8923a;
+    border-radius: 4px; padding: 2px 6px;
+    selection-background-color: #e8923a; selection-color: #ffffff;
+}
+"""
+
+
+def main():
+    app = QApplication(sys.argv)
+    app.setStyleSheet(QSS)
+    win = MainWindow()
+    win.show()
+    sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+    main()

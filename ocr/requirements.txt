@@ -1,0 +1,10 @@
+# 쿠키프렌즈 토벌전 OCR 도구 (Python 3.13) — 실행: py ocr/main.py
+# UI만 보려면 PyQt6 만 설치해도 됩니다.
+PyQt6>=6.6
+mss>=9.0
+opencv-python>=4.8
+numpy>=1.26
+
+# OCR 엔진
+easyocr>=1.7               # 닉네임(한글)·회수
+rapidocr-onnxruntime>=1.3  # 딜량 숫자 (흰 글자 추출 + 콤마 제거 전처리)
