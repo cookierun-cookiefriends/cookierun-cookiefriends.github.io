@@ -1,15 +1,15 @@
 {
   "round": {
-    "id": "demo-s1-r3",
-    "name": "3라운드",
+    "id": "30-1",
+    "name": "비상하는 운명의 시즌 30-1",
     "activeBosses": [
       "dragon",
-      "licorice"
+      "machine"
     ]
   },
   "season": {
-    "id": "demo-s1",
-    "name": "예시 시즌",
+    "id": "30",
+    "name": "비상하는 운명의 시즌 30",
     "activeBosses": [
       "dragon",
       "machine",
@@ -22,19 +22,19 @@
       "bosses": {
         "dragon": {
           "attempts": 9,
-          "damage": 165000000000
+          "damage": 153847329450
         },
         "angel": {
           "attempts": 0,
           "damage": 0
         },
         "machine": {
-          "attempts": 0,
-          "damage": 0
+          "attempts": 9,
+          "damage": 184592177832
         },
         "licorice": {
-          "attempts": 9,
-          "damage": 130000000000
+          "attempts": 0,
+          "damage": 0
         }
       }
     },
@@ -43,19 +43,19 @@
       "bosses": {
         "dragon": {
           "attempts": 9,
-          "damage": 115000000000
+          "damage": 103254891236
         },
         "angel": {
           "attempts": 0,
           "damage": 0
         },
         "machine": {
-          "attempts": 0,
-          "damage": 0
+          "attempts": 9,
+          "damage": 134218765432
         },
         "licorice": {
-          "attempts": 9,
-          "damage": 90000000000
+          "attempts": 0,
+          "damage": 0
         }
       }
     },
@@ -63,20 +63,20 @@
       "nickname": "예시3",
       "bosses": {
         "dragon": {
-          "attempts": 9,
-          "damage": 55000000000
+          "attempts": 5,
+          "damage": 31287456890
         },
         "angel": {
           "attempts": 0,
           "damage": 0
         },
         "machine": {
-          "attempts": 0,
-          "damage": 0
+          "attempts": 9,
+          "damage": 62734591287
         },
         "licorice": {
-          "attempts": 9,
-          "damage": 40000000000
+          "attempts": 0,
+          "damage": 0
         }
       }
     }

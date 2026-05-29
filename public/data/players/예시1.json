@@ -2,10 +2,10 @@
   "nickname": "예시1",
   "history": [
     {
-      "roundId": "demo-s1-r1",
-      "roundName": "1라운드",
-      "seasonId": "demo-s1",
-      "seasonName": "예시 시즌",
+      "roundId": "30-1",
+      "roundName": "비상하는 운명의 시즌 30-1",
+      "seasonId": "30",
+      "seasonName": "비상하는 운명의 시즌 30",
       "activeBosses": [
         "dragon",
         "machine"
@@ -13,7 +13,7 @@
       "bosses": {
         "dragon": {
           "attempts": 9,
-          "damage": 150000000000
+          "damage": 153847329450
         },
         "angel": {
           "attempts": 0,
@@ -21,7 +21,7 @@
         },
         "machine": {
           "attempts": 9,
-          "damage": 180000000000
+          "damage": 184592177832
         },
         "licorice": {
           "attempts": 0,
@@ -30,10 +30,10 @@
       }
     },
     {
-      "roundId": "demo-s1-r2",
-      "roundName": "2라운드",
-      "seasonId": "demo-s1",
-      "seasonName": "예시 시즌",
+      "roundId": "30-2",
+      "roundName": "비상하는 운명의 시즌 30-2",
+      "seasonId": "30",
+      "seasonName": "비상하는 운명의 시즌 30",
       "activeBosses": [
         "machine",
         "licorice"
@@ -49,19 +49,19 @@
         },
         "machine": {
           "attempts": 9,
-          "damage": 190000000000
+          "damage": 195847329123
         },
         "licorice": {
           "attempts": 9,
-          "damage": 120000000000
+          "damage": 123847592456
         }
       }
     },
     {
-      "roundId": "demo-s1-r3",
-      "roundName": "3라운드",
-      "seasonId": "demo-s1",
-      "seasonName": "예시 시즌",
+      "roundId": "30-3",
+      "roundName": "비상하는 운명의 시즌 30-3",
+      "seasonId": "30",
+      "seasonName": "비상하는 운명의 시즌 30",
       "activeBosses": [
         "dragon",
         "licorice"
@@ -69,7 +69,7 @@
       "bosses": {
         "dragon": {
           "attempts": 9,
-          "damage": 165000000000
+          "damage": 167492184729
         },
         "angel": {
           "attempts": 0,
@@ -81,7 +81,7 @@
         },
         "licorice": {
           "attempts": 9,
-          "damage": 130000000000
+          "damage": 134257891632
         }
       }
     }

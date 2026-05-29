@@ -2,10 +2,10 @@
   "nickname": "예시3",
   "history": [
     {
-      "roundId": "demo-s1-r1",
-      "roundName": "1라운드",
-      "seasonId": "demo-s1",
-      "seasonName": "예시 시즌",
+      "roundId": "30-1",
+      "roundName": "비상하는 운명의 시즌 30-1",
+      "seasonId": "30",
+      "seasonName": "비상하는 운명의 시즌 30",
       "activeBosses": [
         "dragon",
         "machine"
@@ -13,7 +13,7 @@
       "bosses": {
         "dragon": {
           "attempts": 5,
-          "damage": 30000000000
+          "damage": 31287456890
         },
         "angel": {
           "attempts": 0,
@@ -21,7 +21,7 @@
         },
         "machine": {
           "attempts": 9,
-          "damage": 60000000000
+          "damage": 62734591287
         },
         "licorice": {
           "attempts": 0,
@@ -30,10 +30,10 @@
       }
     },
     {
-      "roundId": "demo-s1-r2",
-      "roundName": "2라운드",
-      "seasonId": "demo-s1",
-      "seasonName": "예시 시즌",
+      "roundId": "30-2",
+      "roundName": "비상하는 운명의 시즌 30-2",
+      "seasonId": "30",
+      "seasonName": "비상하는 운명의 시즌 30",
       "activeBosses": [
         "machine",
         "licorice"
@@ -58,10 +58,10 @@
       }
     },
     {
-      "roundId": "demo-s1-r3",
-      "roundName": "3라운드",
-      "seasonId": "demo-s1",
-      "seasonName": "예시 시즌",
+      "roundId": "30-3",
+      "roundName": "비상하는 운명의 시즌 30-3",
+      "seasonId": "30",
+      "seasonName": "비상하는 운명의 시즌 30",
       "activeBosses": [
         "dragon",
         "licorice"
@@ -69,7 +69,7 @@
       "bosses": {
         "dragon": {
           "attempts": 9,
-          "damage": 55000000000
+          "damage": 53847219485
         },
         "angel": {
           "attempts": 0,
@@ -81,7 +81,7 @@
         },
         "licorice": {
           "attempts": 9,
-          "damage": 40000000000
+          "damage": 64758392176
         }
       }
     }

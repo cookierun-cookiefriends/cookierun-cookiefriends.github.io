@@ -1,11 +1,11 @@
 import { Outlet, NavLink } from 'react-router-dom';
-import { Home, Users, Settings as SettingsIcon } from 'lucide-react';
+import { Home, Swords, Settings as SettingsIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ThemeToggle } from '@/components/theme-toggle';
 
 const navItems = [
   { to: '/', icon: Home, label: '홈' },
-  { to: '/guild', icon: Users, label: '길드' },
+  { to: '/guild', icon: Swords, label: '토벌전' },
   { to: '/settings', icon: SettingsIcon, label: '설정' },
 ];
 
@@ -60,7 +60,7 @@ export default function Layout() {
             end={to === '/'}
             className={({ isActive }) =>
               cn(
-                'flex-1 flex flex-col items-center gap-1 py-3 text-xs font-medium transition-colors',
+                'flex-1 flex flex-col items-center gap-1 py-3 text-[11px] font-medium transition-colors',
                 isActive ? 'text-primary' : 'text-muted-foreground',
               )
             }

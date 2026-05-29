@@ -4,8 +4,8 @@
     "bosses": {
       "dragon": { "attempts": 0, "damage": 0 },
       "angel": { "attempts": 0, "damage": 0 },
-      "machine": { "attempts": 9, "damage": 190000000000 },
-      "licorice": { "attempts": 9, "damage": 120000000000 }
+      "machine": { "attempts": 9, "damage": 195847329123 },
+      "licorice": { "attempts": 9, "damage": 123847592456 }
     }
   },
   {
@@ -13,8 +13,8 @@
     "bosses": {
       "dragon": { "attempts": 0, "damage": 0 },
       "angel": { "attempts": 0, "damage": 0 },
-      "machine": { "attempts": 9, "damage": 140000000000 },
-      "licorice": { "attempts": 9, "damage": 85000000000 }
+      "machine": { "attempts": 9, "damage": 142371895632 },
+      "licorice": { "attempts": 9, "damage": 88259471365 }
     }
   },
   {

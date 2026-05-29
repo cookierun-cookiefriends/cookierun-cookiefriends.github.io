@@ -1,15 +1,15 @@
 {
   "round": {
-    "id": "demo-s1-r2",
-    "name": "2라운드",
+    "id": "30-2",
+    "name": "비상하는 운명의 시즌 30-2",
     "activeBosses": [
       "machine",
       "licorice"
     ]
   },
   "season": {
-    "id": "demo-s1",
-    "name": "예시 시즌",
+    "id": "30",
+    "name": "비상하는 운명의 시즌 30",
     "activeBosses": [
       "dragon",
       "machine",
@@ -30,11 +30,11 @@
         },
         "machine": {
           "attempts": 9,
-          "damage": 190000000000
+          "damage": 195847329123
         },
         "licorice": {
           "attempts": 9,
-          "damage": 120000000000
+          "damage": 123847592456
         }
       }
     },
@@ -51,11 +51,11 @@
         },
         "machine": {
           "attempts": 9,
-          "damage": 140000000000
+          "damage": 142371895632
         },
         "licorice": {
           "attempts": 9,
-          "damage": 85000000000
+          "damage": 88259471365
         }
       }
     },
