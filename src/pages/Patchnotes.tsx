@@ -1,4 +1,4 @@
-import { Fragment } from 'react';
+import { Fragment, useMemo } from 'react';
 import { usePatchnotes } from '@/hooks/queries';
 import type { PatchVersion } from '@/lib/data';
 import { cn } from '@/lib/utils';
@@ -89,13 +89,17 @@ function VersionCard({ v, latest }: { v: PatchVersion; latest: boolean }) {
 export default function Patchnotes() {
   const { data, isLoading } = usePatchnotes();
 
+  const versions = useMemo(
+    () =>
+      [...(data?.versions ?? [])].sort((a, b) =>
+        compareDesc(a.version, b.version),
+      ),
+    [data],
+  );
+
   if (isLoading) {
     return <div className="p-8 text-muted-foreground">로딩중...</div>;
   }
-
-  const versions = [...(data?.versions ?? [])].sort((a, b) =>
-    compareDesc(a.version, b.version),
-  );
 
   return (
     <div className="p-6 md:p-10 lg:p-12 max-w-3xl space-y-6">

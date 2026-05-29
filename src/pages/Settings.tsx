@@ -1,17 +1,6 @@
-import { useThemeStore, type Theme } from '@/stores/theme';
-import { Sun, Moon, Laptop, type LucideIcon } from 'lucide-react';
+import { useThemeStore } from '@/stores/theme';
+import { THEME_OPTIONS } from '@/components/theme-toggle';
 import { cn } from '@/lib/utils';
-
-const themeOptions: {
-  value: Theme;
-  icon: LucideIcon;
-  label: string;
-  desc: string;
-}[] = [
-  { value: 'light', icon: Sun, label: '라이트', desc: '항상 밝은 화면' },
-  { value: 'dark', icon: Moon, label: '다크', desc: '항상 어두운 화면' },
-  { value: 'system', icon: Laptop, label: '시스템', desc: 'OS 설정 따라감' },
-];
 
 export default function Settings() {
   const theme = useThemeStore((s) => s.theme);
@@ -32,11 +21,11 @@ export default function Settings() {
         <div>
           <h2 className="text-sm font-semibold tracking-tight">화면 테마</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            현재: {themeOptions.find((o) => o.value === theme)?.label}
+            현재: {THEME_OPTIONS.find((o) => o.value === theme)?.label}
           </p>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-          {themeOptions.map(({ value, icon: Icon, label, desc }) => {
+          {THEME_OPTIONS.map(({ value, icon: Icon, label, desc }) => {
             const active = theme === value;
             return (
               <button

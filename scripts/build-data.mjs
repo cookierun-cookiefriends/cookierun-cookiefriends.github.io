@@ -100,22 +100,23 @@ for (const records of Object.values(roundRecords)) {
   for (const r of records) allNicknames.add(r.nickname);
 }
 
-for (const nickname of allNicknames) {
-  const history = [];
-  for (const round of allRounds) {
-    const found = roundRecords[round.id].find((r) => r.nickname === nickname);
-    if (found) {
-      const season = roundToSeason[round.id];
-      history.push({
-        roundId: round.id,
-        roundName: round.name,
-        seasonId: season.id,
-        seasonName: season.name,
-        activeBosses: round.activeBosses,
-        bosses: found.bosses,
-      });
-    }
+// 플레이어별 history를 단일 패스로 수집 (라운드 × 레코드 한 번 순회)
+const historyByNickname = new Map();
+for (const nickname of allNicknames) historyByNickname.set(nickname, []);
+for (const round of allRounds) {
+  const season = roundToSeason[round.id];
+  for (const r of roundRecords[round.id]) {
+    historyByNickname.get(r.nickname).push({
+      roundId: round.id,
+      roundName: round.name,
+      seasonId: season.id,
+      seasonName: season.name,
+      activeBosses: round.activeBosses,
+      bosses: r.bosses,
+    });
   }
+}
+for (const [nickname, history] of historyByNickname) {
   writeJson(path.join(OUT, 'players', `${nickname}.json`), { nickname, history });
 }
 

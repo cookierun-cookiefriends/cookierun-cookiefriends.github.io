@@ -8,7 +8,8 @@ import './index.css';
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 5 * 60 * 1000,
+      // 데이터는 빌드 시 고정된 정적 JSON — 세션 중 바뀌지 않으므로 재페치 불필요.
+      staleTime: Infinity,
       refetchOnWindowFocus: false,
       retry: 1,
     },

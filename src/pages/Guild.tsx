@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useIndex, useRound, useMeta } from '@/hooks/queries';
-import type { BossId, BossRecord, PlayerRecord } from '@/lib/data';
+import type { BossId, BossRecord, PlayerRecord, Meta } from '@/lib/data';
 import {
   Search,
   ArrowUpDown,
@@ -13,27 +13,23 @@ import {
   X,
   ChevronDown,
 } from 'lucide-react';
-import { cn, formatDamage } from '@/lib/utils';
+import { cn, formatDamage, totalDamage, calcChange, type ChangeInfo } from '@/lib/utils';
+import { BossDot } from '@/components/BossDot';
 
 type SortKey = 'total' | BossId | 'name';
 type SortDir = 'asc' | 'desc';
 
-function totalDamage(r: PlayerRecord): number {
-  return Object.values(r.bosses).reduce((sum, b) => sum + b.damage, 0);
-}
+const EMPTY_BOSSES: BossId[] = [];
 
-interface ChangeInfo {
-  pct: number;
-  hasPrev: boolean;
-}
+const defaultDir = (key: SortKey): SortDir => (key === 'name' ? 'asc' : 'desc');
 
-function calcChange(curr: number, prev: number): ChangeInfo {
-  if (prev === 0) return { pct: 0, hasPrev: false };
-  return { pct: ((curr - prev) / prev) * 100, hasPrev: true };
+interface DisplayRow {
+  record: PlayerRecord;
+  rank: number;
+  total: number;
+  totalChange: ChangeInfo;
+  prevRecord?: PlayerRecord;
 }
-
-const defaultDir = (key: SortKey): SortDir =>
-  key === 'name' ? 'asc' : 'desc';
 
 export default function Guild() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -46,14 +42,11 @@ export default function Guild() {
   const allRounds = useMemo(
     () =>
       index?.seasons.flatMap((s) =>
-        s.rounds.map((r) => ({
-          id: r.id,
-          name: r.name,
-          seasonName: s.name,
-        })),
+        s.rounds.map((r) => ({ id: r.id, name: r.name, seasonName: s.name })),
       ) ?? [],
     [index],
   );
+  const allRoundsReversed = useMemo(() => [...allRounds].reverse(), [allRounds]);
 
   const currentIdx = allRounds.findIndex((r) => r.id === activeRoundId);
   const prevRoundId = currentIdx > 0 ? allRounds[currentIdx - 1].id : undefined;
@@ -64,6 +57,12 @@ export default function Guild() {
     prevRound?.records.forEach((r) => map.set(r.nickname, r));
     return map;
   }, [prevRound]);
+
+  const byNickname = useMemo(() => {
+    const map = new Map<string, PlayerRecord>();
+    round?.records.forEach((r) => map.set(r.nickname, r));
+    return map;
+  }, [round]);
 
   const [search, setSearch] = useState('');
   // 3단계 정렬: key 선택 → 반대방향 → 해제(null)
@@ -82,32 +81,52 @@ export default function Guild() {
     return () => window.removeEventListener('keydown', handler);
   }, [selected]);
 
-  const activeBosses = round?.round.activeBosses ?? [];
+  const activeBosses = round?.round.activeBosses ?? EMPTY_BOSSES;
 
-  const sortedRecords = useMemo(() => {
+  // 총합을 한 번만 계산해 순위·필터·정렬·표시가 모두 공유.
+  const rows = useMemo<DisplayRow[]>(() => {
     if (!round) return [];
-    const filtered = round.records.filter((r) =>
-      r.nickname.toLowerCase().includes(search.toLowerCase()),
-    );
-    if (sortKey === null) return filtered;
-    const dir = sortDir === 'asc' ? 1 : -1;
-    return [...filtered].sort((a, b) => {
-      if (sortKey === 'name')
-        return a.nickname.localeCompare(b.nickname, 'ko') * dir;
-      if (sortKey === 'total') return (totalDamage(a) - totalDamage(b)) * dir;
-      return (a.bosses[sortKey].damage - b.bosses[sortKey].damage) * dir;
-    });
-  }, [round, search, sortKey, sortDir]);
+    const withTotal = round.records.map((record) => ({
+      record,
+      total: totalDamage(record),
+    }));
 
-  const totalRanking = useMemo(() => {
-    if (!round) return new Map<string, number>();
-    const sorted = [...round.records].sort(
-      (a, b) => totalDamage(b) - totalDamage(a),
+    const rankMap = new Map<string, number>();
+    [...withTotal]
+      .sort((a, b) => b.total - a.total)
+      .forEach((x, i) => rankMap.set(x.record.nickname, i + 1));
+
+    const q = search.toLowerCase();
+    const filtered = withTotal.filter((x) =>
+      x.record.nickname.toLowerCase().includes(q),
     );
-    const map = new Map<string, number>();
-    sorted.forEach((r, i) => map.set(r.nickname, i + 1));
-    return map;
-  }, [round]);
+
+    const dir = sortDir === 'asc' ? 1 : -1;
+    const sorted =
+      sortKey === null
+        ? filtered
+        : [...filtered].sort((a, b) => {
+            if (sortKey === 'name')
+              return a.record.nickname.localeCompare(b.record.nickname, 'ko') * dir;
+            if (sortKey === 'total') return (a.total - b.total) * dir;
+            return (
+              (a.record.bosses[sortKey].damage - b.record.bosses[sortKey].damage) *
+              dir
+            );
+          });
+
+    return sorted.map(({ record, total }) => {
+      const prevRecord = prevByNickname.get(record.nickname);
+      const prevTotal = prevRecord ? totalDamage(prevRecord) : 0;
+      return {
+        record,
+        rank: rankMap.get(record.nickname) ?? 0,
+        total,
+        totalChange: calcChange(total, prevTotal),
+        prevRecord,
+      };
+    });
+  }, [round, search, sortKey, sortDir, prevByNickname]);
 
   const handleSort = (key: SortKey) => {
     const first = defaultDir(key);
@@ -117,7 +136,6 @@ export default function Guild() {
     } else if (sortDir === first) {
       setSortDir(first === 'asc' ? 'desc' : 'asc');
     } else {
-      // 3번째 클릭 → 정렬 해제
       setSortKey(null);
     }
   };
@@ -126,7 +144,7 @@ export default function Guild() {
     return <div className="p-8 text-muted-foreground">로딩중...</div>;
   }
 
-  const selectedRecord = round?.records.find((r) => r.nickname === selected);
+  const selectedRecord = selected ? byNickname.get(selected) : undefined;
   const selectedPrev = selected ? prevByNickname.get(selected) : undefined;
 
   return (
@@ -146,7 +164,7 @@ export default function Guild() {
             onChange={(e) => setSearchParams({ round: e.target.value })}
             className="appearance-none rounded-xl border border-border bg-card pl-4 pr-12 py-2.5 text-sm md:text-base font-medium shadow-sm focus:outline-none focus:ring-2 focus:ring-ring/40 cursor-pointer"
           >
-            {[...allRounds].reverse().map((r) => (
+            {allRoundsReversed.map((r) => (
               <option key={r.id} value={r.id}>
                 {r.name}
               </option>
@@ -158,29 +176,24 @@ export default function Guild() {
 
       {round && (
         <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-          <div>
-            <p className="text-base md:text-lg font-semibold">
-              {round.round.name}
-            </p>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              {activeBosses.map((bid) => (
-                <span
-                  key={bid}
-                  className="inline-flex items-center gap-2 rounded-full bg-secondary/60 px-3 py-1.5 text-sm font-medium"
-                >
-                  <span
-                    className="size-2.5 rounded-full"
-                    style={{ backgroundColor: `hsl(var(--boss-${bid}))` }}
-                  />
-                  {meta?.bosses[bid]?.name}
-                </span>
-              ))}
-              {prevRound && (
-                <span className="ml-2 text-xs text-muted-foreground">
-                  비교 기준: {prevRound.round.name}
-                </span>
-              )}
-            </div>
+          <p className="text-base md:text-lg font-semibold">
+            {round.round.name}
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {activeBosses.map((bid) => (
+              <span
+                key={bid}
+                className="inline-flex items-center gap-2 rounded-full bg-secondary/60 px-3 py-1.5 text-sm font-medium"
+              >
+                <BossDot bid={bid} size="lg" />
+                {meta?.bosses[bid]?.name}
+              </span>
+            ))}
+            {prevRound && (
+              <span className="ml-2 text-xs text-muted-foreground">
+                비교 기준: {prevRound.round.name}
+              </span>
+            )}
           </div>
         </section>
       )}
@@ -226,11 +239,7 @@ export default function Guild() {
                   className="text-left px-5 py-4 font-semibold cursor-pointer select-none hover:text-foreground transition-colors"
                   onClick={() => handleSort('name')}
                 >
-                  <SortLabel
-                    label="닉네임"
-                    active={sortKey === 'name'}
-                    dir={sortDir}
-                  />
+                  <SortLabel label="닉네임" active={sortKey === 'name'} dir={sortDir} />
                 </th>
                 {activeBosses.map((bid) => (
                   <th
@@ -239,12 +248,7 @@ export default function Guild() {
                     onClick={() => handleSort(bid)}
                   >
                     <div className="inline-flex items-center gap-2">
-                      <span
-                        className="size-2 rounded-full"
-                        style={{
-                          backgroundColor: `hsl(var(--boss-${bid}))`,
-                        }}
-                      />
+                      <BossDot bid={bid} />
                       <SortLabel
                         label={meta?.bosses[bid]?.name ?? bid}
                         active={sortKey === bid}
@@ -257,65 +261,56 @@ export default function Guild() {
                   className="text-right px-5 py-4 font-semibold cursor-pointer select-none hover:text-foreground transition-colors"
                   onClick={() => handleSort('total')}
                 >
-                  <SortLabel
-                    label="총합"
-                    active={sortKey === 'total'}
-                    dir={sortDir}
-                  />
+                  <SortLabel label="총합" active={sortKey === 'total'} dir={sortDir} />
                 </th>
               </tr>
             </thead>
             <tbody>
-              {sortedRecords.map((r) => {
-                const rank = totalRanking.get(r.nickname) ?? 0;
-                const total = totalDamage(r);
-                const prevRecord = prevByNickname.get(r.nickname);
-                const prevTotal = prevRecord ? totalDamage(prevRecord) : 0;
-                const totalChange = calcChange(total, prevTotal);
-                return (
-                  <tr
-                    key={r.nickname}
-                    onClick={() => setSelected(r.nickname)}
-                    className="group border-b border-border last:border-0 hover:bg-secondary/30 transition-colors cursor-pointer"
-                  >
-                    <td className="text-center px-5 py-5 align-top">
-                      <RankBadge rank={rank} />
+              {rows.map(({ record: r, rank, total, totalChange, prevRecord }) => (
+                <tr
+                  key={r.nickname}
+                  onClick={() => setSelected(r.nickname)}
+                  className="group border-b border-border last:border-0 hover:bg-secondary/30 transition-colors cursor-pointer"
+                >
+                  <td className="text-center px-5 py-5 align-top">
+                    <RankBadge rank={rank} />
+                  </td>
+                  <td className="px-5 py-5 align-top">
+                    <span className="text-base font-semibold group-hover:text-primary transition-colors">
+                      {r.nickname}
+                    </span>
+                  </td>
+                  {activeBosses.map((bid) => (
+                    <td key={bid} className="text-right px-5 py-5 align-top">
+                      <BossCell
+                        bid={bid}
+                        meta={meta}
+                        attempts={r.bosses[bid].attempts}
+                        damage={r.bosses[bid].damage}
+                        prev={prevRecord?.bosses[bid]}
+                        mode={damageMode}
+                      />
                     </td>
-                    <td className="px-5 py-5 align-top">
-                      <span className="text-base font-semibold group-hover:text-primary transition-colors">
-                        {r.nickname}
-                      </span>
-                    </td>
-                    {activeBosses.map((bid) => (
-                      <td key={bid} className="text-right px-5 py-5 align-top">
-                        <BossCell
-                          attempts={r.bosses[bid].attempts}
-                          damage={r.bosses[bid].damage}
-                          prev={prevRecord?.bosses[bid]}
-                          mode={damageMode}
-                        />
-                      </td>
-                    ))}
-                    <td className="text-right px-5 py-5 align-top">
-                      {total > 0 ? (
-                        <div className="inline-block text-right">
-                          <div className="text-base font-bold tabular-nums">
-                            {formatDamage(total, damageMode)}
-                          </div>
-                          {totalChange.hasPrev && (
-                            <div className="mt-0.5 flex justify-end">
-                              <ChangeIndicator change={totalChange} />
-                            </div>
-                          )}
+                  ))}
+                  <td className="text-right px-5 py-5 align-top">
+                    {total > 0 ? (
+                      <div className="inline-block text-right">
+                        <div className="text-base font-bold tabular-nums">
+                          {formatDamage(total, damageMode)}
                         </div>
-                      ) : (
-                        <span className="text-muted-foreground/60">-</span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-              {sortedRecords.length === 0 && (
+                        {totalChange.hasPrev && (
+                          <div className="mt-0.5 flex justify-end">
+                            <ChangeIndicator change={totalChange} />
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground/60">-</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {rows.length === 0 && (
                 <tr>
                   <td
                     colSpan={2 + activeBosses.length + 1}
@@ -332,66 +327,53 @@ export default function Guild() {
 
       {/* 모바일: 카드 */}
       <section className="md:hidden space-y-3">
-        {sortedRecords.map((r) => {
-          const rank = totalRanking.get(r.nickname) ?? 0;
-          const total = totalDamage(r);
-          const prevRecord = prevByNickname.get(r.nickname);
-          const prevTotal = prevRecord ? totalDamage(prevRecord) : 0;
-          const totalChange = calcChange(total, prevTotal);
-          return (
-            <button
-              key={r.nickname}
-              type="button"
-              onClick={() => setSelected(r.nickname)}
-              className="block w-full text-left rounded-2xl border border-border bg-card p-4 shadow-sm hover:bg-secondary/30 transition-colors"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <RankBadge rank={rank} />
-                  <span className="font-semibold truncate">{r.nickname}</span>
-                </div>
-                <div className="text-right">
-                  <div className="text-base font-bold tabular-nums">
-                    {total > 0 ? formatDamage(total, damageMode) : '-'}
-                  </div>
-                  {totalChange.hasPrev && (
-                    <div className="mt-0.5">
-                      <ChangeIndicator change={totalChange} />
-                    </div>
-                  )}
-                </div>
+        {rows.map(({ record: r, rank, total, totalChange, prevRecord }) => (
+          <button
+            key={r.nickname}
+            type="button"
+            onClick={() => setSelected(r.nickname)}
+            className="block w-full text-left rounded-2xl border border-border bg-card p-4 shadow-sm hover:bg-secondary/30 transition-colors"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <RankBadge rank={rank} />
+                <span className="font-semibold truncate">{r.nickname}</span>
               </div>
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                {activeBosses.map((bid) => (
-                  <div
-                    key={bid}
-                    className="rounded-xl bg-muted/40 px-3 py-2.5"
-                  >
-                    <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
-                      <span
-                        className="size-1.5 rounded-full"
-                        style={{
-                          backgroundColor: `hsl(var(--boss-${bid}))`,
-                        }}
-                      />
-                      {meta?.bosses[bid]?.name}
-                    </div>
-                    <div className="mt-1.5">
-                      <BossCell
-                        attempts={r.bosses[bid].attempts}
-                        damage={r.bosses[bid].damage}
-                        prev={prevRecord?.bosses[bid]}
-                        mode={damageMode}
-                        compact
-                      />
-                    </div>
+              <div className="text-right">
+                <div className="text-base font-bold tabular-nums">
+                  {total > 0 ? formatDamage(total, damageMode) : '-'}
+                </div>
+                {totalChange.hasPrev && (
+                  <div className="mt-0.5">
+                    <ChangeIndicator change={totalChange} />
                   </div>
-                ))}
+                )}
               </div>
-            </button>
-          );
-        })}
-        {sortedRecords.length === 0 && (
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              {activeBosses.map((bid) => (
+                <div key={bid} className="rounded-xl bg-muted/40 px-3 py-2.5">
+                  <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+                    <BossDot bid={bid} size="sm" />
+                    {meta?.bosses[bid]?.name}
+                  </div>
+                  <div className="mt-1.5">
+                    <BossCell
+                      bid={bid}
+                      meta={meta}
+                      attempts={r.bosses[bid].attempts}
+                      damage={r.bosses[bid].damage}
+                      prev={prevRecord?.bosses[bid]}
+                      mode={damageMode}
+                      compact
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </button>
+        ))}
+        {rows.length === 0 && (
           <div className="rounded-2xl border border-border bg-card p-10 text-center text-sm text-muted-foreground">
             검색 결과가 없습니다
           </div>
@@ -404,7 +386,7 @@ export default function Guild() {
         nickname={selected ?? ''}
         record={selectedRecord}
         prev={selectedPrev}
-        roundName={round ? `${round.season.name} · ${round.round.name}` : ''}
+        roundName={round ? round.round.name : ''}
         activeBosses={activeBosses}
         meta={meta}
         mode={damageMode}
@@ -453,13 +435,7 @@ function RankBadge({ rank }: { rank: number }) {
   return <span className={styles}>{rank}</span>;
 }
 
-function ChangeIndicator({
-  change,
-  small,
-}: {
-  change: ChangeInfo;
-  small?: boolean;
-}) {
+function ChangeIndicator({ change }: { change: ChangeInfo }) {
   if (!change.hasPrev) return null;
   const pct = change.pct;
   const positive = pct > 0.05;
@@ -468,15 +444,14 @@ function ChangeIndicator({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-0.5 font-medium tabular-nums',
-        small ? 'text-[10px]' : 'text-xs',
+        'inline-flex items-center gap-0.5 text-xs font-medium tabular-nums',
         positive && 'text-emerald-600 dark:text-emerald-400',
         negative && 'text-rose-600 dark:text-rose-400',
         !positive && !negative && 'text-muted-foreground',
       )}
       title={`직전 시즌 대비 ${pct.toFixed(1)}%`}
     >
-      <Icon className={small ? 'h-2.5 w-2.5' : 'h-3 w-3'} />
+      <Icon className="h-3 w-3" />
       {pct >= 0 ? '+' : ''}
       {pct.toFixed(1)}%
     </span>
@@ -484,12 +459,16 @@ function ChangeIndicator({
 }
 
 function BossCell({
+  bid,
+  meta,
   attempts,
   damage,
   prev,
   mode,
   compact,
 }: {
+  bid: BossId;
+  meta?: Meta;
   attempts: number;
   damage: number;
   prev?: BossRecord;
@@ -500,6 +479,7 @@ function BossCell({
     return <span className="text-muted-foreground/60">-</span>;
   }
 
+  const max = meta?.bosses[bid]?.maxAttempts ?? 9;
   const change = calcChange(damage, prev?.damage ?? 0);
   const perTicket = attempts > 0 ? Math.floor(damage / attempts) : 0;
   const prevPerTicket =
@@ -507,16 +487,12 @@ function BossCell({
   const perTicketChange = calcChange(perTicket, prevPerTicket);
 
   return (
-    <div
-      className={
-        compact ? 'space-y-2' : 'inline-block text-right space-y-2'
-      }
-    >
+    <div className={compact ? 'space-y-2' : 'inline-block text-right space-y-2'}>
       {/* 총 딜량 */}
       <div>
         <div className="text-base font-bold tabular-nums">
           <span className="text-muted-foreground text-xs mr-1.5 font-normal">
-            {attempts}/9
+            {attempts}/{max}
           </span>
           {formatDamage(damage, mode)}
         </div>
@@ -576,13 +552,28 @@ function PlayerPanel({
   prev?: PlayerRecord;
   roundName: string;
   activeBosses: BossId[];
-  meta: ReturnType<typeof useMeta>['data'];
+  meta?: Meta;
   mode: 'korean' | 'comma';
   onClose: () => void;
 }) {
   const total = record ? totalDamage(record) : 0;
   const prevTotal = prev ? totalDamage(prev) : 0;
   const totalChange = calcChange(total, prevTotal);
+
+  const inner = (
+    <PanelInner
+      nickname={nickname}
+      roundName={roundName}
+      record={record}
+      prev={prev}
+      activeBosses={activeBosses}
+      meta={meta}
+      mode={mode}
+      total={total}
+      totalChange={totalChange}
+      onClose={onClose}
+    />
+  );
 
   return (
     <>
@@ -603,42 +594,18 @@ function PlayerPanel({
         )}
         aria-hidden={!open}
       >
-        <PanelInner
-          nickname={nickname}
-          roundName={roundName}
-          record={record}
-          prev={prev}
-          activeBosses={activeBosses}
-          meta={meta}
-          mode={mode}
-          total={total}
-          totalChange={totalChange}
-          onClose={onClose}
-        />
+        {inner}
       </aside>
 
       {/* 모바일: 중앙 모달 */}
       <div
         className={cn(
           'md:hidden fixed z-[60] left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[calc(100%-2rem)] max-w-md max-h-[85vh] flex flex-col rounded-2xl border border-border bg-card shadow-2xl transition-all duration-200 ease-out',
-          open
-            ? 'opacity-100 scale-100'
-            : 'pointer-events-none opacity-0 scale-95',
+          open ? 'opacity-100 scale-100' : 'pointer-events-none opacity-0 scale-95',
         )}
         aria-hidden={!open}
       >
-        <PanelInner
-          nickname={nickname}
-          roundName={roundName}
-          record={record}
-          prev={prev}
-          activeBosses={activeBosses}
-          meta={meta}
-          mode={mode}
-          total={total}
-          totalChange={totalChange}
-          onClose={onClose}
-        />
+        {inner}
       </div>
     </>
   );
@@ -661,7 +628,7 @@ function PanelInner({
   record?: PlayerRecord;
   prev?: PlayerRecord;
   activeBosses: BossId[];
-  meta: ReturnType<typeof useMeta>['data'];
+  meta?: Meta;
   mode: 'korean' | 'comma';
   total: number;
   totalChange: ChangeInfo;
@@ -713,18 +680,15 @@ function PanelInner({
                   className="rounded-xl border border-border/60 bg-background p-3"
                 >
                   <div className="flex items-center gap-2">
-                    <span
-                      className="size-2 rounded-full"
-                      style={{
-                        backgroundColor: `hsl(var(--boss-${bid}))`,
-                      }}
-                    />
+                    <BossDot bid={bid} />
                     <span className="text-sm font-medium">
                       {meta?.bosses[bid]?.name}
                     </span>
                   </div>
                   <div className="mt-2">
                     <BossCell
+                      bid={bid}
+                      meta={meta}
                       attempts={record.bosses[bid].attempts}
                       damage={record.bosses[bid].damage}
                       prev={prev?.bosses[bid]}
