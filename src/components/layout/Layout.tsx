@@ -1,10 +1,11 @@
 import { Outlet, NavLink } from 'react-router-dom';
-import { Swords, Settings as SettingsIcon } from 'lucide-react';
+import { Swords, ScrollText, Settings as SettingsIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ThemeToggle } from '@/components/theme-toggle';
 
 const navItems = [
   { to: '/', icon: Swords, label: '토벌전' },
+  { to: '/patchnotes', icon: ScrollText, label: '패치노트' },
   { to: '/settings', icon: SettingsIcon, label: '설정' },
 ];
 
@@ -20,7 +21,7 @@ export default function Layout() {
             <span className="inline-block size-2 rounded-full bg-primary" />
             쿠키프렌즈
           </NavLink>
-          <p className="mt-1 text-xs text-muted-foreground">Guild Dashboard</p>
+          <p className="mt-1 text-xs text-muted-foreground">길드 대시보드</p>
         </div>
         <nav className="flex flex-col gap-1 p-3 flex-1">
           {navItems.map(({ to, icon: Icon, label }) => (

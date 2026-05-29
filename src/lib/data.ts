@@ -78,6 +78,22 @@ export interface PlayerData {
   history: PlayerHistoryEntry[];
 }
 
+// 패치노트 — type은 한국어 자유 문자열 (신규/개선/수정/성능/디자인/삭제 등)
+export interface PatchChange {
+  type: string;
+  text: string;
+}
+
+export interface PatchVersion {
+  version: string;
+  title?: string;
+  changes: PatchChange[];
+}
+
+export interface Patchnotes {
+  versions: PatchVersion[];
+}
+
 async function fetchJson<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`);
   if (!res.ok) throw new Error(`Failed to fetch ${path}: ${res.status}`);
@@ -90,3 +106,4 @@ export const fetchRound = (id: string) =>
   fetchJson<RoundData>(`data/rounds/${encodeURIComponent(id)}.json`);
 export const fetchPlayer = (nickname: string) =>
   fetchJson<PlayerData>(`data/players/${encodeURIComponent(nickname)}.json`);
+export const fetchPatchnotes = () => fetchJson<Patchnotes>('patchnotes.json');
