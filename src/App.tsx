@@ -1,21 +1,14 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import Layout from '@/components/layout/Layout';
-import Home from '@/pages/Home';
-import Setup from '@/pages/Setup';
 import Guild from '@/pages/Guild';
-import Season from '@/pages/Season';
-import Player from '@/pages/Player';
 import Settings from '@/pages/Settings';
 
 export default function App() {
   return (
     <Routes>
       <Route element={<Layout />}>
-        <Route index element={<Home />} />
-        <Route path="setup" element={<Setup />} />
-        <Route path="guild" element={<Guild />} />
-        <Route path="season/:id" element={<Season />} />
-        <Route path="player/:nickname" element={<Player />} />
+        {/* 1차 오픈: 토벌전 기록 + 설정만. 홈/개인화/시즌·플레이어 상세는 BACKLOG.md 참고 */}
+        <Route index element={<Guild />} />
         <Route path="settings" element={<Settings />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

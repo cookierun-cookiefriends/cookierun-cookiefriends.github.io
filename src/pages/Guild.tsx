@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { useSearchParams, Link } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { useIndex, useRound, useMeta } from '@/hooks/queries';
 import type { BossId, BossRecord, PlayerRecord } from '@/lib/data';
 import {
@@ -11,6 +11,7 @@ import {
   TrendingDown,
   Minus,
   X,
+  ChevronDown,
 } from 'lucide-react';
 import { cn, formatDamage } from '@/lib/utils';
 
@@ -139,52 +140,47 @@ export default function Guild() {
             시즌별 길드원 딜량 기록 · 직전 시즌 대비 증감률
           </p>
         </div>
-        <select
-          value={activeRoundId ?? ''}
-          onChange={(e) => setSearchParams({ round: e.target.value })}
-          className="rounded-xl border border-border bg-card px-4 py-2.5 text-sm md:text-base font-medium shadow-sm focus:outline-none focus:ring-2 focus:ring-ring/40"
-        >
-          {[...allRounds].reverse().map((r) => (
-            <option key={r.id} value={r.id}>
-              {r.name}
-            </option>
-          ))}
-        </select>
+        <div className="relative">
+          <select
+            value={activeRoundId ?? ''}
+            onChange={(e) => setSearchParams({ round: e.target.value })}
+            className="appearance-none rounded-xl border border-border bg-card pl-4 pr-12 py-2.5 text-sm md:text-base font-medium shadow-sm focus:outline-none focus:ring-2 focus:ring-ring/40 cursor-pointer"
+          >
+            {[...allRounds].reverse().map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+          <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+        </div>
       </header>
 
       {round && (
         <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-base md:text-lg font-semibold">
-                {round.round.name}
-              </p>
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                {activeBosses.map((bid) => (
+          <div>
+            <p className="text-base md:text-lg font-semibold">
+              {round.round.name}
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {activeBosses.map((bid) => (
+                <span
+                  key={bid}
+                  className="inline-flex items-center gap-2 rounded-full bg-secondary/60 px-3 py-1.5 text-sm font-medium"
+                >
                   <span
-                    key={bid}
-                    className="inline-flex items-center gap-2 rounded-full bg-secondary/60 px-3 py-1.5 text-sm font-medium"
-                  >
-                    <span
-                      className="size-2.5 rounded-full"
-                      style={{ backgroundColor: `hsl(var(--boss-${bid}))` }}
-                    />
-                    {meta?.bosses[bid]?.name}
-                  </span>
-                ))}
-                {prevRound && (
-                  <span className="ml-2 text-xs text-muted-foreground">
-                    비교 기준: {prevRound.round.name}
-                  </span>
-                )}
-              </div>
+                    className="size-2.5 rounded-full"
+                    style={{ backgroundColor: `hsl(var(--boss-${bid}))` }}
+                  />
+                  {meta?.bosses[bid]?.name}
+                </span>
+              ))}
+              {prevRound && (
+                <span className="ml-2 text-xs text-muted-foreground">
+                  비교 기준: {prevRound.round.name}
+                </span>
+              )}
             </div>
-            <Link
-              to={`/season/${round.season.id}`}
-              className="text-sm text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
-            >
-              시즌 전체 보기 →
-            </Link>
           </div>
         </section>
       )}
@@ -279,19 +275,16 @@ export default function Guild() {
                 return (
                   <tr
                     key={r.nickname}
-                    className="border-b border-border last:border-0 hover:bg-secondary/30 transition-colors"
+                    onClick={() => setSelected(r.nickname)}
+                    className="group border-b border-border last:border-0 hover:bg-secondary/30 transition-colors cursor-pointer"
                   >
                     <td className="text-center px-5 py-5 align-top">
                       <RankBadge rank={rank} />
                     </td>
                     <td className="px-5 py-5 align-top">
-                      <button
-                        type="button"
-                        onClick={() => setSelected(r.nickname)}
-                        className="text-base font-semibold hover:text-primary transition-colors text-left"
-                      >
+                      <span className="text-base font-semibold group-hover:text-primary transition-colors">
                         {r.nickname}
-                      </button>
+                      </span>
                     </td>
                     {activeBosses.map((bid) => (
                       <td key={bid} className="text-right px-5 py-5 align-top">
@@ -744,10 +737,6 @@ function PanelInner({
             </div>
           </section>
         )}
-
-        <p className="text-xs text-muted-foreground italic">
-          (시즌별 추이 · 보스별 차트 · 길드 내 순위 변화 등은 추후 추가)
-        </p>
       </div>
     </>
   );
