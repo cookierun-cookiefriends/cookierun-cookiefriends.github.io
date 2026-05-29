@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
 import { useIndex, useRound, useMeta } from '@/hooks/queries';
 import type { BossId, BossRecord, PlayerRecord } from '@/lib/data';
 import {
@@ -35,12 +35,11 @@ const defaultDir = (key: SortKey): SortDir =>
   key === 'name' ? 'asc' : 'desc';
 
 export default function Guild() {
-  const { id: paramId } = useParams();
-  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { data: index } = useIndex();
   const { data: meta } = useMeta();
 
-  const activeRoundId = paramId ?? index?.latestRoundId;
+  const activeRoundId = searchParams.get('round') ?? index?.latestRoundId;
   const { data: round, isLoading } = useRound(activeRoundId);
 
   const allRounds = useMemo(
@@ -142,10 +141,10 @@ export default function Guild() {
         </div>
         <select
           value={activeRoundId ?? ''}
-          onChange={(e) => navigate(`/guild?round=${e.target.value}`)}
+          onChange={(e) => setSearchParams({ round: e.target.value })}
           className="rounded-xl border border-border bg-card px-4 py-2.5 text-sm md:text-base font-medium shadow-sm focus:outline-none focus:ring-2 focus:ring-ring/40"
         >
-          {allRounds.map((r) => (
+          {[...allRounds].reverse().map((r) => (
             <option key={r.id} value={r.id}>
               {r.name}
             </option>
