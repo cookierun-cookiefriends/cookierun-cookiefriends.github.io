@@ -468,7 +468,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("쿠키프렌즈 토벌전 OCR")
-        self.resize(1200, 720)
+        self.resize(1440, 760)
         self.boss_checks: dict[str, QCheckBox] = {}
         self._build_ui()
         self.boss_checks["machine"].setChecked(True)
@@ -540,8 +540,6 @@ class MainWindow(QMainWindow):
         self.btn_auto = QPushButton("자동 캡처 (스크롤)")
         self.btn_auto.setObjectName("primary")
         self.btn_auto.clicked.connect(self._on_auto_capture)
-        self.btn_add = QPushButton("행 추가")
-        self.btn_add.clicked.connect(lambda: self._add_row())
 
         srow = QHBoxLayout()
         srow.addWidget(QLabel("스크롤 양"))
@@ -557,7 +555,6 @@ class MainWindow(QMainWindow):
         lay.addWidget(self.btn_capture)
         lay.addWidget(self.btn_auto)
         lay.addLayout(srow)
-        lay.addWidget(self.btn_add)
         lay.addStretch(1)
 
         self.status = QLabel("준비됨")
@@ -572,15 +569,32 @@ class MainWindow(QMainWindow):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(12)
 
+        header_row = QHBoxLayout()
         header = QLabel("토벌전 기록 입력")
         header.setObjectName("pageTitle")
-        lay.addWidget(header)
+        header_row.addWidget(header)
+        header_row.addStretch(1)
+        self.btn_add = QPushButton("＋")
+        self.btn_add.setObjectName("iconBtn")
+        self.btn_add.setToolTip("행 추가")
+        self.btn_add.clicked.connect(lambda: self._add_row())
+        btn_del = QPushButton("🗑")
+        btn_del.setObjectName("iconBtn")
+        btn_del.setToolTip("선택 행 삭제")
+        btn_del.clicked.connect(self._delete_selected)
+        btn_clear = QPushButton("🧹")
+        btn_clear.setObjectName("iconBtn")
+        btn_clear.setToolTip("전체 비우기")
+        btn_clear.clicked.connect(self._clear_rows)
+        for b in (self.btn_add, btn_del, btn_clear):
+            header_row.addWidget(b)
+        lay.addLayout(header_row)
 
         self.table = QTableWidget(0, 1)
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(40)
         # 셀 직접 편집·선택 변경도 하단 카운트에 실시간 반영
-        self.table.itemChanged.connect(self._update_count)
+        self.table.itemChanged.connect(self._on_item_changed)
         self.table.itemSelectionChanged.connect(self._update_count)
         lay.addWidget(self.table, 1)
 
@@ -589,15 +603,9 @@ class MainWindow(QMainWindow):
         self.count_label.setObjectName("status")
         bottom.addWidget(self.count_label)
         bottom.addStretch(1)
-        btn_del = QPushButton("선택 행 삭제")
-        btn_del.clicked.connect(self._delete_selected)
-        btn_clear = QPushButton("전체 비우기")
-        btn_clear.clicked.connect(self._clear_rows)
         btn_export = QPushButton("JSON 내보내기")
         btn_export.setObjectName("primary")
         btn_export.clicked.connect(self._export)
-        bottom.addWidget(btn_del)
-        bottom.addWidget(btn_clear)
         bottom.addWidget(btn_export)
         lay.addLayout(bottom)
         return main
@@ -625,6 +633,7 @@ class MainWindow(QMainWindow):
         for bid in bosses:
             headers.append(f"{BOSS_NAME[bid]} 횟수")
             headers.append(f"{BOSS_NAME[bid]} 딜량")
+        headers.append("시즌 종합 딜량")          # 보스 딜량 합 (읽기전용)
         self.table.setColumnCount(len(headers))
         self.table.setHorizontalHeaderLabels(headers)
         header = self.table.horizontalHeader()
@@ -636,18 +645,25 @@ class MainWindow(QMainWindow):
             header.setSectionResizeMode(col, Mode.ResizeToContents)
             header.setSectionResizeMode(col + 1, Mode.Stretch)
             col += 2
+        header.setSectionResizeMode(col, Mode.Stretch)   # 시즌 종합 딜량
 
     def _add_row(self, nickname: str = "", values: dict | None = None):
         bosses = self.active_bosses()
         row = self.table.rowCount()
+        self.table.blockSignals(True)        # 행 채우는 동안 itemChanged 억제
         self.table.insertRow(row)
         self.table.setItem(row, 0, QTableWidgetItem(nickname))
         col = 1
+        total = 0
         for bid in bosses:
             v = (values or {}).get(bid, {})
             self.table.setItem(row, col, QTableWidgetItem(str(v.get("attempts", ""))))
-            self.table.setItem(row, col + 1, QTableWidgetItem(str(v.get("damage", ""))))
+            dmg = v.get("damage", "")
+            self.table.setItem(row, col + 1, QTableWidgetItem(str(dmg)))
+            total += int(dmg) if str(dmg).isdigit() else 0
             col += 2
+        self.table.setItem(row, col, self._readonly_item(f"{total:,}"))   # 시즌 종합 딜량
+        self.table.blockSignals(False)
         self._update_count()
 
     def _delete_selected(self):
@@ -671,6 +687,61 @@ class MainWindow(QMainWindow):
         if sel:
             text += f"  ·  {sel}명 선택됨"
         self.count_label.setText(text)
+
+    def _readonly_item(self, text: str) -> QTableWidgetItem:
+        item = QTableWidgetItem(text)
+        item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        return item
+
+    def _on_item_changed(self, item):
+        self._update_count()
+        col = item.column()
+        if col >= 2 and col % 2 == 0:        # 딜량 컬럼(2,4,…) 수정 → 그 행 종합 갱신
+            self._update_total(item.row())
+
+    def _update_total(self, row: int):
+        """그 행의 보스 딜량 합을 '시즌 종합 딜량' 칸에 다시 쓴다(읽기전용)."""
+        bosses = self.active_bosses()
+        total = 0
+        col = 1
+        for _ in bosses:
+            total += self._cell_int(row, col + 1)
+            col += 2
+        self.table.blockSignals(True)
+        cell = self.table.item(row, col)
+        if cell is None:
+            self.table.setItem(row, col, self._readonly_item(f"{total:,}"))
+        else:
+            cell.setText(f"{total:,}")
+        self.table.blockSignals(False)
+
+    def _verify_order(self):
+        """보스 합 딜량이 위→아래 내림차순인지 검증(게임 정렬과 일치해야 정상)."""
+        ncol = 1 + len(self.active_bosses()) * 2     # 시즌 종합 딜량 컬럼
+        totals = []
+        for r in range(self.table.rowCount()):
+            item = self.table.item(r, 0)
+            nick = item.text().strip() if item else ""
+            if nick:
+                totals.append((nick, self._cell_int(r, ncol)))
+        bad = [
+            f"{totals[i][0]}({totals[i][1]:,}) < 아래 {totals[i + 1][0]}({totals[i + 1][1]:,})"
+            for i in range(len(totals) - 1)
+            if totals[i][1] < totals[i + 1][1]
+        ]
+        if bad:
+            QMessageBox.warning(
+                self,
+                "인식 오류 의심",
+                "합 딜량이 위→아래 내림차순이 아닙니다 — 잘못 인식된 줄이 있을 수 있어요.\n"
+                "딜량을 확인하거나 다시 캡처해 주세요.\n\n어긋난 곳:\n" + "\n".join(bad[:8]),
+            )
+        else:
+            QMessageBox.information(
+                self,
+                "정상",
+                f"합 딜량이 내림차순으로 잘 정렬되어 있습니다. ({len(totals)}명)",
+            )
 
     def keyPressEvent(self, e):
         if e.key() == Qt.Key.Key_Delete and self.table.hasFocus():
@@ -788,6 +859,7 @@ class MainWindow(QMainWindow):
             self.btn_auto.setEnabled(True)
             self.btn_capture.setEnabled(True)
         self.status.setText(f"자동 캡처 완료: 총 {added}명 추가됨 (스크롤 끝까지)")
+        self._verify_order()
 
     # ----- 내보내기 -----
     def _collect_records(self) -> list[dict]:
@@ -844,6 +916,7 @@ class MainWindow(QMainWindow):
 
 QSS = """
 QMainWindow, QWidget { background: #2a2036; color: #f5ecf5; font-size: 13px; }
+QLabel { background: transparent; }
 #sidebar { background: #342843; border: 1px solid #463655; border-radius: 14px; }
 #brand { font-size: 18px; font-weight: 700; color: #f5ecf5; }
 #brandSub { font-size: 11px; color: #cbbdd6; }
@@ -868,6 +941,10 @@ QPushButton {
 QPushButton:hover { background: #503c63; }
 QPushButton#primary { background: #e8923a; border: none; color: #241b2e; }
 QPushButton#primary:hover { background: #f0a352; }
+QPushButton#iconBtn {
+    padding: 0; font-size: 15px; border-radius: 8px;
+    min-width: 34px; max-width: 34px; min-height: 34px; max-height: 34px;
+}
 QTableWidget {
     background: #342843; border: 1px solid #463655; border-radius: 12px;
     gridline-color: #463655;
