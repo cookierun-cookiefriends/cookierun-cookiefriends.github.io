@@ -477,6 +477,9 @@ class MainWindow(QMainWindow):
         self.table = QTableWidget(0, 1)
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(40)
+        # 셀 직접 편집·선택 변경도 하단 카운트에 실시간 반영
+        self.table.itemChanged.connect(self._update_count)
+        self.table.itemSelectionChanged.connect(self._update_count)
         lay.addWidget(self.table, 1)
 
         bottom = QHBoxLayout()
@@ -561,7 +564,11 @@ class MainWindow(QMainWindow):
             for r in range(self.table.rowCount())
             if (self.table.item(r, 0) and self.table.item(r, 0).text().strip())
         )
-        self.count_label.setText(f"{n}명 입력됨")
+        sel = len({i.row() for i in self.table.selectedIndexes()})
+        text = f"{n}명 입력됨"
+        if sel:
+            text += f"  ·  {sel}명 선택됨"
+        self.count_label.setText(text)
 
     def keyPressEvent(self, e):
         if e.key() == Qt.Key.Key_Delete and self.table.hasFocus():
