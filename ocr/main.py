@@ -8,16 +8,16 @@
 설치: pip install -r ocr/requirements.txt   (UI만 보려면 pip install PyQt6)
 
 흐름:
-  1) 시즌 ID/이름, 활성 보스 체크, 한 화면 인원 설정
-  2) "영역 설정" → 게임 화면 위에서 첫 줄 셀 박스들을 드래그/리사이즈,
-     마우스 휠로 행 간격 조절(아래 줄 미리보기) → S 저장
-  3) "캡처 & 인식" → 셀별 OCR로 표 채움 → 검수
+  1) 시즌 ID/이름, 활성 보스 체크
+  2) "영역 설정" → 게임 화면 위에서 표(리스트) 영역을 통으로 감싸기 → S 저장
+  3) "캡처 & 인식" → 표 안에서 줄·보스칸·9회·딜량 자동 검출 → 검수
   4) JSON 내보내기 (스크롤 후 다시 캡처하면 새 인원만 추가)
 """
 
 import sys
 import re
 import json
+import time
 import difflib
 from pathlib import Path
 
@@ -32,7 +32,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QCheckBox,
     QPushButton,
-    QSpinBox,
+    QSlider,
     QTableWidget,
     QTableWidgetItem,
     QGroupBox,
@@ -62,12 +62,13 @@ NICKNAMES_PATH = OCR_DIR / "ocr_nicknames.txt"
 
 
 def cells_for(boss_ids):
-    """활성 보스에 따른 첫 줄 셀 정의 [(key, 표시명)]. key의 '#'은 보스/항목 구분."""
-    cells = [("nick", "닉네임")]
-    for bid in boss_ids:
-        cells.append((f"{bid}#att", f"{BOSS_NAME[bid]} 횟수"))
-        cells.append((f"{bid}#dmg", f"{BOSS_NAME[bid]} 딜량"))
-    return cells
+    """영역 박스 정의 [(key, 표시명)] — 표(리스트) 영역 통으로 1박스.
+
+    캡처 시 이 박스 안에서 보스 영역(가로)·줄(세로)을 자동 검출하고, 보스 영역을
+    보스 수로 균등 분할 → 각 칸 상(9회)/하(딜량) OCR. 닉네임은 보스 영역 왼쪽을 읽음.
+    스크롤 위치·참여 여부와 무관. 박스 하나만 표 전체에 맞추면 된다.
+    """
+    return [("table", "표 영역 (리스트 전체)")]
 
 
 # ---------- 캡처 / OCR ----------
@@ -83,6 +84,16 @@ def capture_region(rect: QRect, sct):
         }
     )
     return np.array(raw)[:, :, :3]
+
+
+def _scroll_at(x, y, notches):
+    """(x, y) 위치로 커서를 옮기고 마우스 휠 스크롤. notches<0 = 아래로."""
+    import ctypes
+
+    user32 = ctypes.windll.user32
+    user32.SetCursorPos(int(x), int(y))
+    time.sleep(0.05)                       # 커서 이동 후 게임이 hover 인식할 시간
+    user32.mouse_event(0x0800, 0, 0, ctypes.c_int(int(notches * 120)), 0)  # WHEEL
 
 
 def _preprocess(img):
@@ -197,30 +208,107 @@ def _empty_bosses():
     return {bid: {"attempts": 0, "damage": 0} for bid, _ in BOSSES}
 
 
-def capture_with_regions(data, boss_ids):
-    """첫 줄 셀 + 행 간격으로 모든 줄을 셀별 OCR → 레코드 리스트."""
+def _detect_grid(table_box, n, sct):
+    """표 영역 1박스 안에서 보스 영역(가로)·줄(세로)을 자동 검출.
+
+    1) 세로 전체 평균 가로 프로파일 → 가장 넓은 회색칸 = 보스 영역(가로 위치).
+       (여러 줄 평균하면 닉네임 글자는 흐려지고 고정된 회색 점수칸만 남는다.)
+    2) 보스 영역 첫 칸 컬럼의 세로 프로파일 → 흰 간격(>236)으로 나뉜 칸 = 각 줄.
+    참여·미참여·스크롤 무관. 반환 (boss_x0, cell_w, [row_cy...], row_h) 또는 None.
+    """
+    import cv2
+
+    tx, ty, tw, th = table_box
+    gray = cv2.cvtColor(
+        capture_region(QRect(tx, ty, tw, th), sct), cv2.COLOR_BGR2GRAY
+    )
+
+    # 1) 가로: 세로 전체 평균 → 회색칸들 중 가장 넓은 것 = 보스 영역
+    hwhite = gray.mean(axis=0) > 236
+    runs = []
+    in_r = False
+    s = 0
+    for x in range(tw):
+        cell = not hwhite[x]
+        if cell and not in_r:
+            s, in_r = x, True
+        elif not cell and in_r:
+            runs.append((s, x))
+            in_r = False
+    if in_r:
+        runs.append((s, tw))
+    runs = [r for r in runs if r[1] - r[0] >= tw * 0.12]
+    if not runs:
+        return None
+    bx0, bx1 = max(runs, key=lambda r: r[1] - r[0])      # 가장 넓음 = 보스 영역
+    cell_w = (bx1 - bx0) // max(1, n)
+
+    # 2) 세로: 보스 영역 첫 칸 중앙 컬럼 → 흰 간격으로 나뉜 온전한 칸 = 줄
+    cxl, cxr = bx0 + cell_w // 4, bx0 + cell_w * 3 // 4
+    vwhite = gray[:, cxl:cxr].mean(axis=1) > 236
+    cells = []
+    in_c = False
+    s = 0
+    for y in range(th):
+        cell = not vwhite[y]
+        if cell and not in_c:
+            s, in_c = y, True
+        elif not cell and in_c:
+            if y - s >= 40:                  # 칸 경계선(1~4px) 노이즈 제외
+                cells.append((s, y))
+            in_c = False
+    if in_c and th - s >= 40:
+        cells.append((s, th))
+    if not cells:
+        return None
+    heights = sorted(e - s for s, e in cells)
+    med = heights[len(heights) // 2]                     # 온전한 칸 높이(중앙값)
+    rows = [ty + (s + e) // 2 for s, e in cells if med * 0.7 <= e - s <= med * 1.3]
+    if not rows:
+        return None
+    return (tx + bx0, cell_w, rows, med)
+
+
+def capture_with_regions(data, boss_ids, auto_align=True):
+    """표 영역 1박스 + 완전 자동 검출로 모든 줄을 셀별 OCR → 레코드 리스트.
+
+    표 영역 안에서 보스 영역(가로)·줄(세로)을 자동 검출하고, 보스 영역을 보스 수로
+    균등 분할 → 각 칸 상(9회)/하(딜량) OCR. 닉네임은 보스 영역 왼쪽을 읽어 매칭.
+    스크롤·참여 여부 무관. (auto_align 인자는 호환용; 항상 자동 검출)
+    """
     import mss
 
     boxes = data["boxes"]
-    rh = data["row_height"]
-    rows = data["rows"]
     known = load_known_nicknames()
+    tb = boxes.get("table")
+    n = len(boss_ids)
     records = []
+    if not tb or not n:
+        return records
     with mss.mss() as sct:  # 캡처당 mss 인스턴스 1개만 만들어 모든 셀에 재사용
-        for r in range(rows):
-            dy = rh * r
-            nb = boxes.get("nick")
-            nick = get_nick(capture_region(_shift(nb, dy, 6), sct)) if nb else ""
+        grid = _detect_grid(tb, n, sct)
+        if not grid:
+            return records
+        boss_x0, cell_w, rows, row_h = grid
+        nick_w = max(40, boss_x0 - tb[0] - 8)            # 표 왼쪽 ~ 보스 영역 = 닉 영역
+        for cy in rows:
+            top = cy - row_h // 2
+            # 닉네임은 칸 하단(42~95%)만 읽는다 — 위쪽 칭호가 섞이면 짧은 닉이 오매칭됨
+            ny, nh = top + int(row_h * 0.42), int(row_h * 0.53)
+            nick = get_nick(capture_region(QRect(tb[0], ny, nick_w, nh), sct))
             nick = match_nickname(nick, known)
             if not nick:
                 continue
             boss_data = _empty_bosses()
-            for bid in boss_ids:
-                ab = boxes.get(f"{bid}#att")
-                db = boxes.get(f"{bid}#dmg")
-                # 회수·딜량 모두 PaddleOCR rec(빠름). 회수 "9회"는 숫자만 추출
-                att = parse_count(get_numbers(capture_region(_shift(ab, dy, 6), sct))) if ab else 0
-                dmg = parse_damage(get_numbers(capture_region(_shift(db, dy, 14), sct))) if db else 0
+            for i, bid in enumerate(boss_ids):
+                cx = boss_x0 + cell_w * i
+                # 칸을 상(9회)/하(딜량)로 나눠 각각 OCR
+                # 횟수 "9회"는 한글이 붙어 korean rec가 정확, 딜량은 순수 숫자라 en rec
+                # 9회는 칸 상단 ~20~54% 위치(위 여백 제외해야 인식 안정), 딜량은 하반부
+                att_box = [cx, top + int(row_h * 0.20), cell_w, int(row_h * 0.34)]
+                dmg_box = [cx, cy, cell_w, row_h - row_h // 2]
+                att = parse_count(get_nick(capture_region(_shift(att_box, 0, 4), sct)))
+                dmg = parse_damage(get_numbers(capture_region(_shift(dmg_box, 0, 6), sct)))
                 # 한쪽이라도 0이면 인식 오류 → 둘 다 0 (횟수·딜량은 항상 함께 0/0)
                 if not att or not dmg:
                     att = dmg = 0
@@ -275,9 +363,9 @@ class RegionEditor(QWidget):
             if initial and key in initial:
                 self.boxes[key] = QRect(*initial[key])
             else:
-                w = 220 if key == "nick" else (80 if key.endswith("att") else 210)
-                self.boxes[key] = QRect(x, int(H * 0.16), w, 48)
-                x += w + 16
+                w, h = 820, 480                       # 표(리스트) 영역 — 여러 줄 통으로
+                self.boxes[key] = QRect(x, int(H * 0.16), w, h)
+                x += w + 24
 
     def _handle(self, rect: QRect) -> QRect:
         return QRect(
@@ -308,7 +396,7 @@ class RegionEditor(QWidget):
         p.drawText(
             self.rect().adjusted(0, 16, -16, 0),
             Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter,
-            f"첫 줄 셀을 맞추세요  ·  마우스 휠 = 행 간격({self.row_height}px)  ·  S: 저장  ·  Esc: 취소",
+            "표 영역(줄이 다 들어가게)을 감싸세요  ·  S: 저장  ·  Esc: 취소",
         )
 
     def wheelEvent(self, e):
@@ -389,11 +477,13 @@ class MainWindow(QMainWindow):
         # OCR 엔진 백그라운드 워밍업 (완료 전까지 캡처 비활성)
         self.status.setText("OCR 엔진 준비 중...")
         self.btn_capture.setEnabled(False)
+        self.btn_auto.setEnabled(False)
         self._warmup = _WarmupThread()
         self._warmup.finished.connect(
             lambda: (
                 self.status.setText("준비됨"),
                 self.btn_capture.setEnabled(True),
+                self.btn_auto.setEnabled(True),
             )
         )
         self._warmup.start()
@@ -428,12 +518,8 @@ class MainWindow(QMainWindow):
         self.season_id.setPlaceholderText("예: 30-4")
         self.season_name = QLineEdit()
         self.season_name.setPlaceholderText("예: 비상하는 운명의 시즌 30-4")
-        self.rows_spin = QSpinBox()
-        self.rows_spin.setRange(1, 12)
-        self.rows_spin.setValue(4)
         form.addRow("시즌 ID", self.season_id)
         form.addRow("시즌 이름", self.season_name)
-        form.addRow("한 화면 인원", self.rows_spin)
         lay.addWidget(season_box)
 
         boss_box = QGroupBox("활성 보스 (이 시즌)")
@@ -448,13 +534,29 @@ class MainWindow(QMainWindow):
 
         self.btn_regions = QPushButton("영역 설정")
         self.btn_regions.clicked.connect(self._on_set_regions)
-        self.btn_capture = QPushButton("캡처 & 인식")
+        self.btn_capture = QPushButton("캡처 인식")
         self.btn_capture.setObjectName("primary")
         self.btn_capture.clicked.connect(self._on_capture)
+        self.btn_auto = QPushButton("자동 캡처 (스크롤)")
+        self.btn_auto.setObjectName("primary")
+        self.btn_auto.clicked.connect(self._on_auto_capture)
         self.btn_add = QPushButton("행 추가")
         self.btn_add.clicked.connect(lambda: self._add_row())
+
+        srow = QHBoxLayout()
+        srow.addWidget(QLabel("스크롤 양"))
+        self.scroll_slider = QSlider(Qt.Orientation.Horizontal)
+        self.scroll_slider.setRange(4, 40)
+        self.scroll_slider.setValue(16)
+        self.scroll_val = QLabel("16")
+        self.scroll_slider.valueChanged.connect(lambda v: self.scroll_val.setText(str(v)))
+        srow.addWidget(self.scroll_slider, 1)
+        srow.addWidget(self.scroll_val)
+
         lay.addWidget(self.btn_regions)
         lay.addWidget(self.btn_capture)
+        lay.addWidget(self.btn_auto)
+        lay.addLayout(srow)
         lay.addWidget(self.btn_add)
         lay.addStretch(1)
 
@@ -587,7 +689,7 @@ class MainWindow(QMainWindow):
         self._editor = RegionEditor(
             cells_for(self.active_bosses()),
             initial,
-            self.rows_spin.value(),
+            1,  # 표 1박스 — 줄 미리보기 불필요(캡처 시 자동 검출)
             rh,
             self._on_regions_saved,
         )
@@ -595,9 +697,7 @@ class MainWindow(QMainWindow):
 
     def _on_regions_saved(self, data):
         save_regions(data)
-        self.status.setText(
-            f"영역 저장됨 (인원 {data['rows']}, 행 간격 {data['row_height']}px)"
-        )
+        self.status.setText("표 영역 저장됨 — 캡처 시 줄·보스칸 자동 검출")
 
     def _on_capture(self):
         saved = load_regions()
@@ -630,6 +730,64 @@ class MainWindow(QMainWindow):
             existing.add(nick)
             added += 1
         self.status.setText(f"인식 완료: {added}명 추가됨 — 표에서 검수/수정하세요")
+
+    def _on_auto_capture(self):
+        """표 영역을 자동으로 스크롤하며 끝까지 캡처. 스크롤이 멈추면(픽셀 동일) 종료."""
+        saved = load_regions()
+        if not saved or "table" not in saved.get("boxes", {}):
+            QMessageBox.warning(self, "확인", "먼저 '영역 설정'으로 표 영역을 지정하세요.")
+            return
+        import numpy as np
+
+        tb = saved["boxes"]["table"]
+        bosses = self.active_bosses()
+        existing = {
+            self.table.item(r, 0).text().strip()
+            for r in range(self.table.rowCount())
+            if self.table.item(r, 0)
+        }
+        cx, cy = tb[0] + tb[2] // 2, tb[1] + tb[3] // 2
+        prev = None
+        stale = 0
+        added = 0
+        self.btn_auto.setEnabled(False)
+        self.btn_capture.setEnabled(False)
+        try:
+            import mss
+
+            with mss.mss() as sct:
+                for it in range(50):                  # 안전 상한
+                    self.status.setText(f"자동 캡처 중... (화면 {it + 1}, {added}명)")
+                    QApplication.processEvents()
+                    cur = np.asarray(capture_region(QRect(*tb), sct), dtype=np.int16)
+                    changed = prev is None or float(np.abs(cur - prev).mean()) >= 3.0
+                    prev = cur
+                    if changed:
+                        stale = 0
+                        for rec in capture_with_regions(saved, bosses):
+                            nick = rec["nickname"]
+                            if nick and nick not in existing:
+                                self._add_row(nick, rec["bosses"])
+                                existing.add(nick)
+                                added += 1
+                    else:
+                        stale += 1
+                        if stale >= 2:                # 2회 연속 안 변함 = 끝
+                            break
+                    QApplication.processEvents()
+                    _scroll_at(cx, cy, -self.scroll_slider.value())  # 슬라이더 양만큼 아래로
+                    time.sleep(1.0)                   # 스크롤 내려가는 시간 대기
+        except ImportError:
+            QMessageBox.critical(
+                self, "설치 필요", "OCR 라이브러리 미설치\npip install -r requirements.txt"
+            )
+            return
+        except Exception as ex:  # noqa: BLE001
+            QMessageBox.critical(self, "오류", f"자동 캡처 실패:\n{ex}")
+        finally:
+            self.btn_auto.setEnabled(True)
+            self.btn_capture.setEnabled(True)
+        self.status.setText(f"자동 캡처 완료: 총 {added}명 추가됨 (스크롤 끝까지)")
 
     # ----- 내보내기 -----
     def _collect_records(self) -> list[dict]:
@@ -725,6 +883,12 @@ QTableWidget QLineEdit {
     border-radius: 4px; padding: 2px 6px;
     selection-background-color: #e8923a; selection-color: #ffffff;
 }
+QSlider::groove:horizontal { height: 4px; background: #463655; border-radius: 2px; }
+QSlider::sub-page:horizontal { background: #e8923a; border-radius: 2px; }
+QSlider::handle:horizontal {
+    width: 16px; background: #e8923a; border-radius: 8px; margin: -6px 0;
+}
+QSlider::handle:horizontal:hover { background: #f0a352; }
 """
 
 
