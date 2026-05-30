@@ -62,13 +62,18 @@ NICKNAMES_PATH = OCR_DIR / "ocr_nicknames.txt"
 
 
 def cells_for(boss_ids):
-    """영역 박스 정의 [(key, 표시명)] — 표(리스트) 영역 통으로 1박스.
+    """영역 박스 정의 [(key, 표시명)] — 표 / 보스헤더 / 시즌 3박스.
 
-    캡처 시 이 박스 안에서 보스 영역(가로)·줄(세로)을 자동 검출하고, 보스 영역을
-    보스 수로 균등 분할 → 각 칸 상(9회)/하(딜량) OCR. 닉네임은 보스 영역 왼쪽을 읽음.
-    스크롤 위치·참여 여부와 무관. 박스 하나만 표 전체에 맞추면 된다.
+    table: 인원 리스트(스크롤하며 캡처, 보스영역·줄 자동 검출).
+    bossheader: 헤더의 보스 이름(2줄 다 감싸기) — 윗줄+아랫줄 합쳐 보스 판별.
+    season: 하단 시즌 텍스트 — '30-1' 추출.
+    bossheader·season은 스크롤해도 안 변하므로 '보스·시즌 스캔'으로 1회만 읽는다.
     """
-    return [("table", "표 영역 (리스트 전체)")]
+    return [
+        ("table", "표 영역 (리스트 전체)"),
+        ("bossheader", "보스 이름 (헤더 2줄)"),
+        ("season", "시즌 이름 (하단)"),
+    ]
 
 
 # ---------- 캡처 / OCR ----------
@@ -317,6 +322,22 @@ def capture_with_regions(data, boss_ids, auto_align=True):
     return records
 
 
+def scan_bosses(box, sct):
+    """보스 헤더 박스(윗줄/아랫줄)를 OCR → 활성 보스 id 리스트. 이름 2줄을 합쳐 매칭."""
+    x, y, w, h = box
+    top = get_nick(capture_region(QRect(x, y, w, h // 2), sct))
+    bot = get_nick(capture_region(QRect(x, y + h // 2, w, h - h // 2), sct))
+    combined = (top + bot).replace(" ", "")
+    return [bid for bid, name in BOSSES if name in combined]
+
+
+def scan_season(box, sct):
+    """시즌 박스를 OCR → (시즌ID '30-1', 시즌이름 전체)."""
+    text = get_nick(capture_region(QRect(*box), sct)).strip()
+    m = re.search(r"(\d+\s*-\s*\d+)", text)
+    return (m.group(1).replace(" ", "") if m else ""), text
+
+
 def save_regions(data):
     REGIONS_PATH.write_text(
         json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -363,7 +384,12 @@ class RegionEditor(QWidget):
             if initial and key in initial:
                 self.boxes[key] = QRect(*initial[key])
             else:
-                w, h = 820, 480                       # 표(리스트) 영역 — 여러 줄 통으로
+                if key == "table":
+                    w, h = 760, 420                   # 인원 리스트(여러 줄)
+                elif key == "bossheader":
+                    w, h = 460, 72                    # 보스 이름 2줄
+                else:                                 # season
+                    w, h = 280, 46
                 self.boxes[key] = QRect(x, int(H * 0.16), w, h)
                 x += w + 24
 
@@ -478,12 +504,14 @@ class MainWindow(QMainWindow):
         self.status.setText("OCR 엔진 준비 중...")
         self.btn_capture.setEnabled(False)
         self.btn_auto.setEnabled(False)
+        self.btn_scan.setEnabled(False)
         self._warmup = _WarmupThread()
         self._warmup.finished.connect(
             lambda: (
                 self.status.setText("준비됨"),
                 self.btn_capture.setEnabled(True),
                 self.btn_auto.setEnabled(True),
+                self.btn_scan.setEnabled(True),
             )
         )
         self._warmup.start()
@@ -534,6 +562,8 @@ class MainWindow(QMainWindow):
 
         self.btn_regions = QPushButton("영역 설정")
         self.btn_regions.clicked.connect(self._on_set_regions)
+        self.btn_scan = QPushButton("보스·시즌 스캔")
+        self.btn_scan.clicked.connect(self._on_scan_meta)
         self.btn_capture = QPushButton("캡처 인식")
         self.btn_capture.setObjectName("primary")
         self.btn_capture.clicked.connect(self._on_capture)
@@ -552,6 +582,7 @@ class MainWindow(QMainWindow):
         srow.addWidget(self.scroll_val)
 
         lay.addWidget(self.btn_regions)
+        lay.addWidget(self.btn_scan)
         lay.addWidget(self.btn_capture)
         lay.addWidget(self.btn_auto)
         lay.addLayout(srow)
@@ -860,6 +891,44 @@ class MainWindow(QMainWindow):
             self.btn_capture.setEnabled(True)
         self.status.setText(f"자동 캡처 완료: 총 {added}명 추가됨 (스크롤 끝까지)")
         self._verify_order()
+
+    def _on_scan_meta(self):
+        """보스 헤더·시즌 박스를 1회 스캔 → 보스 체크·시즌 ID/이름 자동 설정."""
+        boxes = (load_regions() or {}).get("boxes", {})
+        bh = boxes.get("bossheader")
+        sb = boxes.get("season")
+        if not bh and not sb:
+            QMessageBox.warning(
+                self, "확인",
+                "영역 설정에 보스/시즌 박스가 없습니다. '영역 설정'을 다시 해주세요.",
+            )
+            return
+        self.status.setText("보스·시즌 스캔 중...")
+        QApplication.processEvents()
+        try:
+            import mss
+
+            with mss.mss() as sct:
+                msg = []
+                if bh:
+                    active = scan_bosses(bh, sct)
+                    if active:
+                        for bid, _ in BOSSES:
+                            self.boss_checks[bid].setChecked(bid in active)
+                        msg.append("보스 " + "·".join(BOSS_NAME[b] for b in active))
+                    else:
+                        msg.append("보스 인식 실패")
+                if sb:
+                    sid, sname = scan_season(sb, sct)
+                    if sid:
+                        self.season_id.setText(sid)
+                    if sname:
+                        self.season_name.setText(sname)
+                    msg.append(f"시즌 {sname or '?'}")
+        except Exception as ex:  # noqa: BLE001
+            QMessageBox.critical(self, "오류", f"스캔 실패:\n{ex}")
+            return
+        self.status.setText("스캔 완료 — " + " · ".join(msg))
 
     # ----- 내보내기 -----
     def _collect_records(self) -> list[dict]:
