@@ -1,7 +1,9 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useQueries } from '@tanstack/react-query';
 import { useIndex, useRound, useMeta } from '@/hooks/queries';
-import type { BossId, BossRecord, PlayerRecord, Meta } from '@/lib/data';
+import { fetchRound } from '@/lib/data';
+import type { BossId, BossRecord, PlayerRecord, Meta, RoundData } from '@/lib/data';
 import {
   Search,
   ArrowUpDown,
@@ -27,8 +29,7 @@ interface DisplayRow {
   record: PlayerRecord;
   rank: number;
   total: number;
-  totalChange: ChangeInfo;
-  prevRecord?: PlayerRecord;
+  bossPrev: Partial<Record<BossId, BossRecord>>;
 }
 
 export default function Guild() {
@@ -42,21 +43,33 @@ export default function Guild() {
   const allRounds = useMemo(
     () =>
       index?.seasons.flatMap((s) =>
-        s.rounds.map((r) => ({ id: r.id, name: r.name, seasonName: s.name })),
+        s.rounds.map((r) => ({
+          id: r.id,
+          name: r.name,
+          seasonName: s.name,
+          activeBosses: r.activeBosses,
+        })),
       ) ?? [],
     [index],
   );
   const allRoundsReversed = useMemo(() => [...allRounds].reverse(), [allRounds]);
 
   const currentIdx = allRounds.findIndex((r) => r.id === activeRoundId);
-  const prevRoundId = currentIdx > 0 ? allRounds[currentIdx - 1].id : undefined;
-  const { data: prevRound } = useRound(prevRoundId);
 
-  const prevByNickname = useMemo(() => {
-    const map = new Map<string, PlayerRecord>();
-    prevRound?.records.forEach((r) => map.set(r.nickname, r));
+  // 보스별 '직전 활성 시즌' 비교를 위해 모든 라운드 데이터를 불러온다(캐시 공유).
+  const roundResults = useQueries({
+    queries: allRounds.map((r) => ({
+      queryKey: ['round', r.id],
+      queryFn: () => fetchRound(r.id),
+    })),
+  });
+  const roundDataById = useMemo(() => {
+    const map = new Map<string, RoundData>();
+    roundResults.forEach((res, i) => {
+      if (res.data) map.set(allRounds[i].id, res.data);
+    });
     return map;
-  }, [prevRound]);
+  }, [roundResults, allRounds]);
 
   const byNickname = useMemo(() => {
     const map = new Map<string, PlayerRecord>();
@@ -82,6 +95,28 @@ export default function Guild() {
   }, [selected]);
 
   const activeBosses = round?.round.activeBosses ?? EMPTY_BOSSES;
+
+  // 각 보스가 '직전에 활성이던 시즌'의 record를 닉네임으로 찾게 매핑.
+  // 보스마다 마지막 활성 라운드가 다르다(바로 직전이 아니라 전전, 더 오래 전일 수도).
+  const prevByBoss = useMemo(() => {
+    const result = new Map<BossId, Map<string, PlayerRecord>>();
+    for (const bid of activeBosses) {
+      let prevId: string | undefined;
+      for (let i = currentIdx - 1; i >= 0; i--) {
+        if (allRounds[i].activeBosses?.includes(bid)) {
+          prevId = allRounds[i].id;
+          break;
+        }
+      }
+      const nickMap = new Map<string, PlayerRecord>();
+      if (prevId)
+        roundDataById
+          .get(prevId)
+          ?.records.forEach((r) => nickMap.set(r.nickname, r));
+      result.set(bid, nickMap);
+    }
+    return result;
+  }, [activeBosses, currentIdx, allRounds, roundDataById]);
 
   // 총합을 한 번만 계산해 순위·필터·정렬·표시가 모두 공유.
   const rows = useMemo<DisplayRow[]>(() => {
@@ -116,17 +151,18 @@ export default function Guild() {
           });
 
     return sorted.map(({ record, total }) => {
-      const prevRecord = prevByNickname.get(record.nickname);
-      const prevTotal = prevRecord ? totalDamage(prevRecord) : 0;
+      const bossPrev: Partial<Record<BossId, BossRecord>> = {};
+      for (const bid of activeBosses) {
+        bossPrev[bid] = prevByBoss.get(bid)?.get(record.nickname)?.bosses[bid];
+      }
       return {
         record,
         rank: rankMap.get(record.nickname) ?? 0,
         total,
-        totalChange: calcChange(total, prevTotal),
-        prevRecord,
+        bossPrev,
       };
     });
-  }, [round, search, sortKey, sortDir, prevByNickname]);
+  }, [round, search, sortKey, sortDir, activeBosses, prevByBoss]);
 
   const handleSort = (key: SortKey) => {
     const first = defaultDir(key);
@@ -145,7 +181,12 @@ export default function Guild() {
   }
 
   const selectedRecord = selected ? byNickname.get(selected) : undefined;
-  const selectedPrev = selected ? prevByNickname.get(selected) : undefined;
+  const selectedBossPrev: Partial<Record<BossId, BossRecord>> = {};
+  if (selected) {
+    for (const bid of activeBosses) {
+      selectedBossPrev[bid] = prevByBoss.get(bid)?.get(selected)?.bosses[bid];
+    }
+  }
 
   return (
     <div className="p-6 md:p-10 lg:p-12 space-y-7 max-w-[1400px]">
@@ -155,7 +196,7 @@ export default function Guild() {
             토벌전 기록
           </h1>
           <p className="mt-2 text-base text-muted-foreground">
-            시즌별 길드원 딜량 기록 · 직전 시즌 대비 증감률
+            시즌별 길드원 딜량 기록 · 이전 활성 시즌 대비 증감률
           </p>
         </div>
         <div className="relative">
@@ -189,11 +230,6 @@ export default function Guild() {
                 {meta?.bosses[bid]?.name}
               </span>
             ))}
-            {prevRound && (
-              <span className="ml-2 text-xs text-muted-foreground">
-                비교 기준: {prevRound.round.name}
-              </span>
-            )}
           </div>
         </section>
       )}
@@ -266,7 +302,7 @@ export default function Guild() {
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ record: r, rank, total, totalChange, prevRecord }) => (
+              {rows.map(({ record: r, rank, total, bossPrev }) => (
                 <tr
                   key={r.nickname}
                   onClick={() => setSelected(r.nickname)}
@@ -287,22 +323,16 @@ export default function Guild() {
                         meta={meta}
                         attempts={r.bosses[bid].attempts}
                         damage={r.bosses[bid].damage}
-                        prev={prevRecord?.bosses[bid]}
+                        prev={bossPrev[bid]}
                         mode={damageMode}
+                        full
                       />
                     </td>
                   ))}
                   <td className="text-right px-5 py-5 align-top">
                     {total > 0 ? (
-                      <div className="inline-block text-right">
-                        <div className="text-base font-bold tabular-nums">
-                          {formatDamage(total, damageMode)}
-                        </div>
-                        {totalChange.hasPrev && (
-                          <div className="mt-0.5 flex justify-end">
-                            <ChangeIndicator change={totalChange} />
-                          </div>
-                        )}
+                      <div className="text-base font-bold tabular-nums">
+                        {formatDamage(total, damageMode, true)}
                       </div>
                     ) : (
                       <span className="text-muted-foreground/60">-</span>
@@ -327,7 +357,7 @@ export default function Guild() {
 
       {/* 모바일: 카드 */}
       <section className="md:hidden space-y-3">
-        {rows.map(({ record: r, rank, total, totalChange, prevRecord }) => (
+        {rows.map(({ record: r, rank, total, bossPrev }) => (
           <button
             key={r.nickname}
             type="button"
@@ -343,11 +373,6 @@ export default function Guild() {
                 <div className="text-base font-bold tabular-nums">
                   {total > 0 ? formatDamage(total, damageMode) : '-'}
                 </div>
-                {totalChange.hasPrev && (
-                  <div className="mt-0.5">
-                    <ChangeIndicator change={totalChange} />
-                  </div>
-                )}
               </div>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2">
@@ -363,7 +388,7 @@ export default function Guild() {
                       meta={meta}
                       attempts={r.bosses[bid].attempts}
                       damage={r.bosses[bid].damage}
-                      prev={prevRecord?.bosses[bid]}
+                      prev={bossPrev[bid]}
                       mode={damageMode}
                       compact
                     />
@@ -385,7 +410,7 @@ export default function Guild() {
         open={!!selected}
         nickname={selected ?? ''}
         record={selectedRecord}
-        prev={selectedPrev}
+        bossPrev={selectedBossPrev}
         roundName={round ? round.round.name : ''}
         activeBosses={activeBosses}
         meta={meta}
@@ -441,6 +466,9 @@ function ChangeIndicator({ change }: { change: ChangeInfo }) {
   const positive = pct > 0.05;
   const negative = pct < -0.05;
   const Icon = positive ? TrendingUp : negative ? TrendingDown : Minus;
+  // 변화가 미미하면(반올림 0) 부호 없이 0.0% — "-0.0%" 같은 음수 0 방지
+  const label =
+    positive || negative ? `${pct > 0 ? '+' : ''}${pct.toFixed(1)}` : '0.0';
   return (
     <span
       className={cn(
@@ -449,11 +477,10 @@ function ChangeIndicator({ change }: { change: ChangeInfo }) {
         negative && 'text-rose-600 dark:text-rose-400',
         !positive && !negative && 'text-muted-foreground',
       )}
-      title={`직전 시즌 대비 ${pct.toFixed(1)}%`}
+      title={`이전 활성 시즌 대비 ${label}%`}
     >
       <Icon className="h-3 w-3" />
-      {pct >= 0 ? '+' : ''}
-      {pct.toFixed(1)}%
+      {label}%
     </span>
   );
 }
@@ -466,6 +493,7 @@ function BossCell({
   prev,
   mode,
   compact,
+  full,
 }: {
   bid: BossId;
   meta?: Meta;
@@ -474,6 +502,7 @@ function BossCell({
   prev?: BossRecord;
   mode: 'korean' | 'comma';
   compact?: boolean;
+  full?: boolean;
 }) {
   if (attempts === 0 && damage === 0) {
     return <span className="text-muted-foreground/60">-</span>;
@@ -494,7 +523,7 @@ function BossCell({
           <span className="text-muted-foreground text-xs mr-1.5 font-normal">
             {attempts}/{max}
           </span>
-          {formatDamage(damage, mode)}
+          {formatDamage(damage, mode, full)}
         </div>
         {change.hasPrev && (
           <div className={cn('mt-0.5', compact ? '' : 'flex justify-end')}>
@@ -521,7 +550,7 @@ function BossCell({
               티켓당
             </span>
             <span className="text-sm font-bold text-foreground">
-              {formatDamage(perTicket, mode)}
+              {formatDamage(perTicket, mode, full)}
             </span>
           </div>
           {perTicketChange.hasPrev && (
@@ -539,7 +568,7 @@ function PlayerPanel({
   open,
   nickname,
   record,
-  prev,
+  bossPrev,
   roundName,
   activeBosses,
   meta,
@@ -549,7 +578,7 @@ function PlayerPanel({
   open: boolean;
   nickname: string;
   record?: PlayerRecord;
-  prev?: PlayerRecord;
+  bossPrev: Partial<Record<BossId, BossRecord>>;
   roundName: string;
   activeBosses: BossId[];
   meta?: Meta;
@@ -557,20 +586,17 @@ function PlayerPanel({
   onClose: () => void;
 }) {
   const total = record ? totalDamage(record) : 0;
-  const prevTotal = prev ? totalDamage(prev) : 0;
-  const totalChange = calcChange(total, prevTotal);
 
   const inner = (
     <PanelInner
       nickname={nickname}
       roundName={roundName}
       record={record}
-      prev={prev}
+      bossPrev={bossPrev}
       activeBosses={activeBosses}
       meta={meta}
       mode={mode}
       total={total}
-      totalChange={totalChange}
       onClose={onClose}
     />
   );
@@ -615,23 +641,21 @@ function PanelInner({
   nickname,
   roundName,
   record,
-  prev,
+  bossPrev,
   activeBosses,
   meta,
   mode,
   total,
-  totalChange,
   onClose,
 }: {
   nickname: string;
   roundName: string;
   record?: PlayerRecord;
-  prev?: PlayerRecord;
+  bossPrev: Partial<Record<BossId, BossRecord>>;
   activeBosses: BossId[];
   meta?: Meta;
   mode: 'korean' | 'comma';
   total: number;
-  totalChange: ChangeInfo;
   onClose: () => void;
 }) {
   return (
@@ -661,9 +685,8 @@ function PanelInner({
           </p>
           <div className="mt-1 flex items-end gap-2">
             <span className="text-2xl font-bold tabular-nums">
-              {total > 0 ? formatDamage(total, mode) : '-'}
+              {total > 0 ? formatDamage(total, mode, true) : '-'}
             </span>
-            {totalChange.hasPrev && <ChangeIndicator change={totalChange} />}
           </div>
         </section>
 
@@ -691,9 +714,10 @@ function PanelInner({
                       meta={meta}
                       attempts={record.bosses[bid].attempts}
                       damage={record.bosses[bid].damage}
-                      prev={prev?.bosses[bid]}
+                      prev={bossPrev[bid]}
                       mode={mode}
                       compact
+                      full
                     />
                   </div>
                 </div>

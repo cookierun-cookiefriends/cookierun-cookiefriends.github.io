@@ -35,6 +35,22 @@ for (const round of allRounds) {
   );
 }
 
+// 활성 보스 자동 도출 — 기록에 딜량>0인 보스를 활성으로 (seasons.json엔 안 적어도 됨).
+// 큰 시즌의 활성 = 소속 라운드 활성 보스의 합집합. 둘 다 meta.bossOrder 순서 유지.
+function deriveActive(records) {
+  return meta.bossOrder.filter((bid) =>
+    records.some((r) => (r.bosses[bid]?.damage ?? 0) > 0),
+  );
+}
+for (const season of seasons) {
+  const seasonActive = new Set();
+  for (const round of season.rounds) {
+    round.activeBosses = deriveActive(roundRecords[round.id]);
+    round.activeBosses.forEach((b) => seasonActive.add(b));
+  }
+  season.activeBosses = meta.bossOrder.filter((b) => seasonActive.has(b));
+}
+
 function validate() {
   const validBossIds = new Set(Object.keys(meta.bosses));
   for (const season of seasons) {

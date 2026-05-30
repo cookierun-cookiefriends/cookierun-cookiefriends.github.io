@@ -23,7 +23,11 @@ export function calcChange(curr: number, prev: number): ChangeInfo {
   return { pct: ((curr - prev) / prev) * 100, hasPrev: true };
 }
 
-export function formatDamage(value: number, mode: 'korean' | 'comma' = 'korean'): string {
+export function formatDamage(
+  value: number,
+  mode: 'korean' | 'comma' = 'korean',
+  full = false,
+): string {
   if (!value) return '0';
   if (mode === 'comma') return value.toLocaleString('en-US');
 
@@ -40,8 +44,9 @@ export function formatDamage(value: number, mode: 'korean' | 'comma' = 'korean')
     result += (result ? ' ' : '') + man.toLocaleString('en-US') + '만';
     remaining = remaining % 10_000;
   }
-  if (remaining > 0 && result === '') {
-    result = remaining.toLocaleString('en-US');
+  // full이면 만 미만(천~일)까지 붙인다. 아니면 만 단위에서 절삭(단 만 미만 값은 그대로).
+  if (remaining > 0 && (full || result === '')) {
+    result += (result ? ' ' : '') + remaining.toLocaleString('en-US');
   }
   return result || '0';
 }
