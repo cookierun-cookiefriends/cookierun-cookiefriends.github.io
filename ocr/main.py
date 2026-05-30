@@ -43,6 +43,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QRect, QPoint, QThread
 from PyQt6.QtGui import QGuiApplication, QPainter, QColor, QPen
 
+# 순서는 data-source/meta.json 의 bossOrder 와 일치해야 함 (내보낸 컬럼 순서 = 사이트 표시 순서)
 BOSSES = [
     ("dragon", "드래곤"),
     ("angel", "대천사"),
@@ -50,6 +51,7 @@ BOSSES = [
     ("licorice", "감초"),
 ]
 BOSS_NAME = dict(BOSSES)
+MAX_ATTEMPTS = 9  # 보스당 최대 도전 횟수 (meta.json 의 maxAttempts 와 동일)
 
 OCR_DIR = Path(__file__).resolve().parent          # ocr/
 REPO_ROOT = OCR_DIR.parent                          # 프로젝트 루트
@@ -69,19 +71,17 @@ def cells_for(boss_ids):
 
 
 # ---------- 캡처 / OCR ----------
-def capture_region(rect: QRect):
-    import mss
+def capture_region(rect: QRect, sct):
     import numpy as np
 
-    with mss.mss() as sct:
-        raw = sct.grab(
-            {
-                "left": rect.x(),
-                "top": rect.y(),
-                "width": rect.width(),
-                "height": rect.height(),
-            }
-        )
+    raw = sct.grab(
+        {
+            "left": rect.x(),
+            "top": rect.y(),
+            "width": rect.width(),
+            "height": rect.height(),
+        }
+    )
     return np.array(raw)[:, :, :3]
 
 
@@ -118,19 +118,20 @@ def get_numbers(img):
     return " ".join(x.get("rec_text", "") for x in result)
 
 
+def _digits(text):
+    """OCR 텍스트에서 숫자만 추출. '미참여' 등 '참여' 포함 시 빈 문자열."""
+    return "" if "참여" in text else re.sub(r"\D", "", text)
+
+
 def parse_count(text):
-    """횟수 문자열 → 0~9. '미참여'/숫자 없음 → 0."""
-    if "참여" in text:
-        return 0
-    digits = re.sub(r"\D", "", text)
-    return min(int(digits), 9) if digits else 0
+    """횟수 문자열 → 0~MAX_ATTEMPTS. '미참여'/숫자 없음 → 0."""
+    digits = _digits(text)
+    return min(int(digits), MAX_ATTEMPTS) if digits else 0
 
 
 def parse_damage(text):
     """딜량 문자열 → 정수. '미참여'·공란·노이즈(100만 미만)는 0."""
-    if "참여" in text:
-        return 0
-    digits = re.sub(r"\D", "", text)
+    digits = _digits(text)
     val = int(digits) if digits else 0
     return val if val >= 1_000_000 else 0
 
@@ -191,40 +192,40 @@ def _shift(box, dy, pad_x=0):
     return QRect(box[0] - pad_x, box[1] + dy, box[2] + 2 * pad_x, box[3])
 
 
+def _empty_bosses():
+    """모든 보스 0/0 으로 초기화한 기록 골격."""
+    return {bid: {"attempts": 0, "damage": 0} for bid, _ in BOSSES}
+
+
 def capture_with_regions(data, boss_ids):
     """첫 줄 셀 + 행 간격으로 모든 줄을 셀별 OCR → 레코드 리스트."""
+    import mss
+
     boxes = data["boxes"]
     rh = data["row_height"]
     rows = data["rows"]
     known = load_known_nicknames()
     records = []
-    for r in range(rows):
-        dy = rh * r
-        nb = boxes.get("nick")
-        nick = get_nick(capture_region(_shift(nb, dy, 6))) if nb else ""
-        nick = match_nickname(nick, known)
-        if not nick:
-            continue
-        boss_data = {bid: {"attempts": 0, "damage": 0} for bid, _ in BOSSES}
-        for bid in boss_ids:
-            ab = boxes.get(f"{bid}#att")
-            db = boxes.get(f"{bid}#dmg")
-            # 회수·딜량 모두 PaddleOCR rec(빠름). 회수 "9회"는 숫자만 추출
-            att = (
-                parse_count(get_numbers(capture_region(_shift(ab, dy, 6))))
-                if ab
-                else 0
-            )
-            dmg = (
-                parse_damage(get_numbers(capture_region(_shift(db, dy, 14))))
-                if db
-                else 0
-            )
-            # 한쪽이 0이면 인식 오류 → 둘 다 0 (횟수·딜량은 항상 함께 0/0)
-            if att == 0 or dmg == 0:
-                att = dmg = 0
-            boss_data[bid] = {"attempts": att, "damage": dmg}
-        records.append({"nickname": nick, "bosses": boss_data})
+    with mss.mss() as sct:  # 캡처당 mss 인스턴스 1개만 만들어 모든 셀에 재사용
+        for r in range(rows):
+            dy = rh * r
+            nb = boxes.get("nick")
+            nick = get_nick(capture_region(_shift(nb, dy, 6), sct)) if nb else ""
+            nick = match_nickname(nick, known)
+            if not nick:
+                continue
+            boss_data = _empty_bosses()
+            for bid in boss_ids:
+                ab = boxes.get(f"{bid}#att")
+                db = boxes.get(f"{bid}#dmg")
+                # 회수·딜량 모두 PaddleOCR rec(빠름). 회수 "9회"는 숫자만 추출
+                att = parse_count(get_numbers(capture_region(_shift(ab, dy, 6), sct))) if ab else 0
+                dmg = parse_damage(get_numbers(capture_region(_shift(db, dy, 14), sct))) if db else 0
+                # 한쪽이라도 0이면 인식 오류 → 둘 다 0 (횟수·딜량은 항상 함께 0/0)
+                if not att or not dmg:
+                    att = dmg = 0
+                boss_data[bid] = {"attempts": att, "damage": dmg}
+            records.append({"nickname": nick, "bosses": boss_data})
     return records
 
 
@@ -349,7 +350,6 @@ class RegionEditor(QWidget):
                 {
                     "rows": self.rows,
                     "row_height": self.row_height,
-                    "resolution": [self.width(), self.height()],
                     "boxes": {
                         k: [r.x(), r.y(), r.width(), r.height()]
                         for k, r in self.boxes.items()
@@ -633,7 +633,7 @@ class MainWindow(QMainWindow):
             nick = nick_item.text().strip() if nick_item else ""
             if not nick:
                 continue
-            boss_data = {bid: {"attempts": 0, "damage": 0} for bid, _ in BOSSES}
+            boss_data = _empty_bosses()
             col = 1
             for bid in bosses:
                 boss_data[bid] = {
