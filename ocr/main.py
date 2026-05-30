@@ -40,7 +40,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QFrame,
 )
-from PyQt6.QtCore import Qt, QRect, QPoint
+from PyQt6.QtCore import Qt, QRect, QPoint, QThread
 from PyQt6.QtGui import QGuiApplication, QPainter, QColor, QPen
 
 BOSSES = [
@@ -92,55 +92,30 @@ def _preprocess(img):
     return cv2.resize(img, (w * 4, h * 4), interpolation=cv2.INTER_CUBIC)
 
 
-def _preprocess_number(img):
-    """딜량 셀: 흰 글자만 추출 + 콤마(작은 점) 제거 → 흰 배경에 검은 숫자."""
-    import cv2
-
-    h, w = img.shape[:2]
-    big = cv2.resize(img, (w * 4, h * 4), interpolation=cv2.INTER_CUBIC)
-    gray = cv2.cvtColor(big, cv2.COLOR_BGR2GRAY)
-    _, mask = cv2.threshold(gray, 170, 255, cv2.THRESH_BINARY)  # 흰 글자 = 255
-    # 숫자보다 키 작은 덩어리(콤마)는 제거 — 콤마가 숫자로 오인되는 것 방지
-    cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if cnts:
-        max_h = max(cv2.boundingRect(c)[3] for c in cnts)
-        for c in cnts:
-            if cv2.boundingRect(c)[3] < max_h * 0.55:
-                cv2.drawContours(mask, [c], -1, 0, -1)
-    return cv2.bitwise_not(mask)  # 흰 배경 + 검은 숫자
+_rec_engine = None
+_nick_engine = None
 
 
-_easy_engine = None
-_rapid_engine = None
+def get_nick(img):
+    """닉네임 셀 → 텍스트. PaddleOCR korean rec(검출 생략) — 빠르고 한글 인식."""
+    global _nick_engine
+    if _nick_engine is None:
+        from paddleocr import TextRecognition
 
-
-def get_text(img):
-    """닉네임 셀 → 인식 텍스트 줄들(위→아래). 한글+영어 (EasyOCR)."""
-    global _easy_engine
-    if _easy_engine is None:
-        import easyocr
-
-        _easy_engine = easyocr.Reader(["ko", "en"], gpu=False)
-    result = _easy_engine.readtext(_preprocess(img))
-    lines = sorted(
-        (([p[1] for p in box], str(text).strip()) for box, text, _c in result),
-        key=lambda t: sum(t[0]) / len(t[0]),
-    )
-    return [t[1] for t in lines if t[1]]
+        _nick_engine = TextRecognition(model_name="korean_PP-OCRv5_mobile_rec")
+    result = _nick_engine.predict(_preprocess(img))
+    return " ".join(x.get("rec_text", "") for x in result).strip()
 
 
 def get_numbers(img):
-    """딜량 셀 → 숫자 문자열 (RapidOCR, 흰 글자 + 콤마 제거 전처리)."""
-    global _rapid_engine
-    if _rapid_engine is None:
-        from rapidocr_onnxruntime import RapidOCR
+    """딜량 셀 → 숫자 문자열. PaddleOCR rec 전용(검출 생략) — 빠르고 콤마 포함 정확."""
+    global _rec_engine
+    if _rec_engine is None:
+        from paddleocr import TextRecognition
 
-        _rapid_engine = RapidOCR()
-    out = _rapid_engine(_preprocess_number(img))
-    result = out[0] if isinstance(out, tuple) else out
-    if not result:
-        return ""
-    return " ".join(str(item[1]) for item in result)
+        _rec_engine = TextRecognition(model_name="en_PP-OCRv5_mobile_rec")
+    result = _rec_engine.predict(_preprocess(img))
+    return " ".join(x.get("rec_text", "") for x in result)
 
 
 def parse_count(text):
@@ -158,12 +133,6 @@ def parse_damage(text):
     digits = re.sub(r"\D", "", text)
     val = int(digits) if digits else 0
     return val if val >= 1_000_000 else 0
-
-
-def pick_nickname(lines):
-    """닉네임 셀 줄들 → 닉네임 (칭호가 섞이면 아래쪽 줄을 채택)."""
-    cands = [ln.strip() for ln in lines if re.search(r"[가-힣A-Za-z0-9]", ln)]
-    return cands[-1] if cands else ""
 
 
 def load_known_nicknames():
@@ -217,8 +186,9 @@ def match_nickname(nick, known):
     return best
 
 
-def _shift(box, dy):
-    return QRect(box[0], box[1] + dy, box[2], box[3])
+def _shift(box, dy, pad_x=0):
+    # pad_x: 좌우 여백 — 박스 가장자리 숫자가 잘리는 것 방지
+    return QRect(box[0] - pad_x, box[1] + dy, box[2] + 2 * pad_x, box[3])
 
 
 def capture_with_regions(data, boss_ids):
@@ -231,7 +201,7 @@ def capture_with_regions(data, boss_ids):
     for r in range(rows):
         dy = rh * r
         nb = boxes.get("nick")
-        nick = pick_nickname(get_text(capture_region(_shift(nb, dy)))) if nb else ""
+        nick = get_nick(capture_region(_shift(nb, dy, 6))) if nb else ""
         nick = match_nickname(nick, known)
         if not nick:
             continue
@@ -239,13 +209,20 @@ def capture_with_regions(data, boss_ids):
         for bid in boss_ids:
             ab = boxes.get(f"{bid}#att")
             db = boxes.get(f"{bid}#dmg")
-            # 회수("9회")는 한글 섞여 EasyOCR이 안정적, 딜량(긴 숫자)은 RapidOCR
+            # 회수·딜량 모두 PaddleOCR rec(빠름). 회수 "9회"는 숫자만 추출
             att = (
-                parse_count(" ".join(get_text(capture_region(_shift(ab, dy)))))
+                parse_count(get_numbers(capture_region(_shift(ab, dy, 6))))
                 if ab
                 else 0
             )
-            dmg = parse_damage(get_numbers(capture_region(_shift(db, dy)))) if db else 0
+            dmg = (
+                parse_damage(get_numbers(capture_region(_shift(db, dy, 14))))
+                if db
+                else 0
+            )
+            # 한쪽이 0이면 인식 오류 → 둘 다 0 (횟수·딜량은 항상 함께 0/0)
+            if att == 0 or dmg == 0:
+                att = dmg = 0
             boss_data[bid] = {"attempts": att, "damage": dmg}
         records.append({"nickname": nick, "bosses": boss_data})
     return records
@@ -384,17 +361,42 @@ class RegionEditor(QWidget):
             self.close()
 
 
+class _WarmupThread(QThread):
+    """앱 시작 시 OCR 엔진을 백그라운드로 미리 로드 → 첫 캡처 지연 제거."""
+
+    def run(self):
+        import numpy as np
+
+        dummy = np.full((40, 200, 3), 255, np.uint8)
+        for fn in (get_numbers, get_nick):
+            try:
+                fn(dummy)
+            except Exception:
+                pass
+
+
 # ---------- 메인 윈도우 ----------
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("쿠키프렌즈 토벌전 OCR")
-        self.resize(1120, 720)
+        self.resize(1200, 720)
         self.boss_checks: dict[str, QCheckBox] = {}
         self._build_ui()
         self.boss_checks["machine"].setChecked(True)
         self.boss_checks["licorice"].setChecked(True)
         self._rebuild_columns()
+        # OCR 엔진 백그라운드 워밍업 (완료 전까지 캡처 비활성)
+        self.status.setText("OCR 엔진 준비 중...")
+        self.btn_capture.setEnabled(False)
+        self._warmup = _WarmupThread()
+        self._warmup.finished.connect(
+            lambda: (
+                self.status.setText("준비됨"),
+                self.btn_capture.setEnabled(True),
+            )
+        )
+        self._warmup.start()
 
     def _build_ui(self):
         central = QWidget()
@@ -410,7 +412,7 @@ class MainWindow(QMainWindow):
     def _build_sidebar(self) -> QWidget:
         side = QWidget()
         side.setObjectName("sidebar")
-        side.setFixedWidth(300)
+        side.setFixedWidth(360)
         lay = QVBoxLayout(side)
         lay.setContentsMargins(18, 18, 18, 18)
         lay.setSpacing(14)

@@ -64,20 +64,6 @@ export interface RoundData {
   records: PlayerRecord[];
 }
 
-export interface PlayerHistoryEntry {
-  roundId: string;
-  roundName: string;
-  seasonId: string;
-  seasonName: string;
-  activeBosses: BossId[];
-  bosses: PlayerBosses;
-}
-
-export interface PlayerData {
-  nickname: string;
-  history: PlayerHistoryEntry[];
-}
-
 // 패치노트 — type은 한국어 자유 문자열 (신규/개선/수정/성능/디자인/삭제 등)
 export interface PatchChange {
   type: string;
@@ -104,6 +90,4 @@ export const fetchIndex = () => fetchJson<Index>('data/index.json');
 export const fetchMeta = () => fetchJson<Meta>('data/meta.json');
 export const fetchRound = (id: string) =>
   fetchJson<RoundData>(`data/rounds/${encodeURIComponent(id)}.json`);
-export const fetchPlayer = (nickname: string) =>
-  fetchJson<PlayerData>(`data/players/${encodeURIComponent(nickname)}.json`);
 export const fetchPatchnotes = () => fetchJson<Patchnotes>('patchnotes.json');

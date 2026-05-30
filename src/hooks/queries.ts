@@ -3,7 +3,6 @@ import {
   fetchIndex,
   fetchMeta,
   fetchRound,
-  fetchPlayer,
   fetchPatchnotes,
 } from '@/lib/data';
 
@@ -18,13 +17,6 @@ export const useRound = (id: string | undefined) =>
     queryKey: ['round', id],
     queryFn: () => fetchRound(id!),
     enabled: !!id,
-  });
-
-export const usePlayer = (nickname: string | undefined) =>
-  useQuery({
-    queryKey: ['player', nickname],
-    queryFn: () => fetchPlayer(nickname!),
-    enabled: !!nickname,
   });
 
 export const usePatchnotes = () =>
