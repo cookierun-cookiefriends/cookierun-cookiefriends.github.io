@@ -1,17 +1,17 @@
 """쿠키프렌즈 토벌전 OCR 도구.
 
-게임 "토벌전 참여 현황" 화면에서 첫 줄의 셀(닉네임 / 보스별 횟수·딜량)을 한 번 지정하면,
-'행 간격'으로 아래 줄을 자동 복제하여 한 화면의 모든 인원을 셀별 OCR한다.
+게임 "토벌전 참여 현황" 화면에서 표/보스이름/시즌 영역을 한 번 지정하면,
+표 안에서 줄·보스칸을 자동 검출해 전원의 닉네임·횟수·딜량을 OCR한다.
 결과를 data-source/records/{시즌ID}.json 형태로 내보낸다.
 
 실행: 프로젝트 루트에서  py ocr/main.py   (또는 ocr 폴더에서  py main.py)
 설치: pip install -r ocr/requirements.txt   (UI만 보려면 pip install PyQt6)
 
 흐름:
-  1) 시즌 ID/이름, 활성 보스 체크
-  2) "영역 설정" → 게임 화면 위에서 표(리스트) 영역을 통으로 감싸기 → S 저장
-  3) "캡처 & 인식" → 표 안에서 줄·보스칸·9회·딜량 자동 검출 → 검수
-  4) JSON 내보내기 (스크롤 후 다시 캡처하면 새 인원만 추가)
+  1) "영역 설정" → 표/보스이름/시즌 영역 박스 지정 → S 저장 (한 번만)
+  2) "보스·시즌 스캔" → 활성 보스·시즌 ID 자동 입력
+  3) "자동 캡처" → 스크롤하며 전원 인식 → 합 딜량 정렬 검증
+  4) JSON 내보내기
 """
 
 import sys
@@ -61,7 +61,7 @@ NICKNAMES_PATH = OCR_DIR / "ocr_nicknames.txt"
 
 
 
-def cells_for(boss_ids):
+def cells_for():
     """영역 박스 정의 [(key, 표시명)] — 표 / 보스헤더 / 시즌 3박스.
 
     table: 인원 리스트(스크롤하며 캡처, 보스영역·줄 자동 검출).
@@ -213,6 +213,22 @@ def _empty_bosses():
     return {bid: {"attempts": 0, "damage": 0} for bid, _ in BOSSES}
 
 
+def _runs(mask, min_len=0):
+    """1D bool mask에서 '칸'(False 구간)을 [(start, end)] 리스트로. 길이 < min_len 제외."""
+    runs = []
+    s = None
+    for i, white in enumerate(mask):
+        if not white and s is None:
+            s = i
+        elif white and s is not None:
+            if i - s >= min_len:
+                runs.append((s, i))
+            s = None
+    if s is not None and len(mask) - s >= min_len:
+        runs.append((s, len(mask)))
+    return runs
+
+
 def _detect_grid(table_box, n, sct):
     """표 영역 1박스 안에서 보스 영역(가로)·줄(세로)을 자동 검출.
 
@@ -229,41 +245,15 @@ def _detect_grid(table_box, n, sct):
     )
 
     # 1) 가로: 세로 전체 평균 → 회색칸들 중 가장 넓은 것 = 보스 영역
-    hwhite = gray.mean(axis=0) > 236
-    runs = []
-    in_r = False
-    s = 0
-    for x in range(tw):
-        cell = not hwhite[x]
-        if cell and not in_r:
-            s, in_r = x, True
-        elif not cell and in_r:
-            runs.append((s, x))
-            in_r = False
-    if in_r:
-        runs.append((s, tw))
-    runs = [r for r in runs if r[1] - r[0] >= tw * 0.12]
+    runs = _runs(gray.mean(axis=0) > 236, tw * 0.12)
     if not runs:
         return None
     bx0, bx1 = max(runs, key=lambda r: r[1] - r[0])      # 가장 넓음 = 보스 영역
     cell_w = (bx1 - bx0) // max(1, n)
 
-    # 2) 세로: 보스 영역 첫 칸 중앙 컬럼 → 흰 간격으로 나뉜 온전한 칸 = 줄
+    # 2) 세로: 보스 영역 첫 칸 중앙 컬럼 → 흰 간격으로 나뉜 온전한 칸(>=40px) = 줄
     cxl, cxr = bx0 + cell_w // 4, bx0 + cell_w * 3 // 4
-    vwhite = gray[:, cxl:cxr].mean(axis=1) > 236
-    cells = []
-    in_c = False
-    s = 0
-    for y in range(th):
-        cell = not vwhite[y]
-        if cell and not in_c:
-            s, in_c = y, True
-        elif not cell and in_c:
-            if y - s >= 40:                  # 칸 경계선(1~4px) 노이즈 제외
-                cells.append((s, y))
-            in_c = False
-    if in_c and th - s >= 40:
-        cells.append((s, th))
+    cells = _runs(gray[:, cxl:cxr].mean(axis=1) > 236, 40)
     if not cells:
         return None
     heights = sorted(e - s for s, e in cells)
@@ -274,12 +264,12 @@ def _detect_grid(table_box, n, sct):
     return (tx + bx0, cell_w, rows, med)
 
 
-def capture_with_regions(data, boss_ids, auto_align=True):
+def capture_with_regions(data, boss_ids):
     """표 영역 1박스 + 완전 자동 검출로 모든 줄을 셀별 OCR → 레코드 리스트.
 
     표 영역 안에서 보스 영역(가로)·줄(세로)을 자동 검출하고, 보스 영역을 보스 수로
     균등 분할 → 각 칸 상(9회)/하(딜량) OCR. 닉네임은 보스 영역 왼쪽을 읽어 매칭.
-    스크롤·참여 여부 무관. (auto_align 인자는 호환용; 항상 자동 검출)
+    스크롤·참여 여부 무관.
     """
     import mss
 
@@ -355,15 +345,13 @@ def load_regions():
 
 # ---------- 영역 편집 오버레이 ----------
 class RegionEditor(QWidget):
-    """전체화면 오버레이 — 첫 줄 셀 박스를 드래그/리사이즈하고 휠로 행 간격 조절."""
+    """전체화면 오버레이 — 표/보스/시즌 영역 박스를 드래그/리사이즈."""
 
     HANDLE = 16
 
-    def __init__(self, cells, initial, rows, row_height, on_save):
+    def __init__(self, cells, initial, on_save):
         super().__init__()
         self.cells = cells
-        self.rows = rows
-        self.row_height = row_height or 110
         self.on_save = on_save
         self.active = None
         self.offset = QPoint()
@@ -403,15 +391,6 @@ class RegionEditor(QWidget):
         p.fillRect(self.rect(), QColor(20, 16, 30, 110))
         for key, name in self.cells:
             rect = self.boxes[key]
-            # 아래 줄 미리보기 — 밝은 하늘색 + 채움으로 잘 보이게
-            for r in range(1, self.rows):
-                rr = QRect(
-                    rect.x(), rect.y() + self.row_height * r, rect.width(), rect.height()
-                )
-                p.fillRect(rr, QColor(120, 220, 255, 40))
-                p.setPen(QPen(QColor(140, 225, 255), 2, Qt.PenStyle.DashLine))
-                p.drawRect(rr)
-            # 첫 줄 (진하게)
             p.fillRect(rect, QColor(232, 146, 58, 35))
             p.setPen(QPen(QColor("#e8923a"), 2))
             p.drawRect(rect)
@@ -424,11 +403,6 @@ class RegionEditor(QWidget):
             Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter,
             "표 영역(줄이 다 들어가게)을 감싸세요  ·  S: 저장  ·  Esc: 취소",
         )
-
-    def wheelEvent(self, e):
-        step = 5 if e.angleDelta().y() > 0 else -5
-        self.row_height = max(20, self.row_height + step)
-        self.update()
 
     def mousePressEvent(self, e):
         pos = e.position().toPoint()
@@ -462,8 +436,6 @@ class RegionEditor(QWidget):
         if e.key() == Qt.Key.Key_S:
             self.on_save(
                 {
-                    "rows": self.rows,
-                    "row_height": self.row_height,
                     "boxes": {
                         k: [r.x(), r.y(), r.width(), r.height()]
                         for k, r in self.boxes.items()
@@ -693,7 +665,7 @@ class MainWindow(QMainWindow):
             self.table.setItem(row, col + 1, QTableWidgetItem(str(dmg)))
             total += int(dmg) if str(dmg).isdigit() else 0
             col += 2
-        self.table.setItem(row, col, self._readonly_item(f"{total:,}"))   # 시즌 종합 딜량
+        self.table.setItem(row, self._total_col(), self._readonly_item(f"{total:,}"))
         self.table.blockSignals(False)
         self._update_count()
 
@@ -724,6 +696,10 @@ class MainWindow(QMainWindow):
         item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
         return item
 
+    def _total_col(self) -> int:
+        """시즌 종합 딜량 컬럼 인덱스 (= 닉 1칸 + 보스당 2칸)."""
+        return 1 + len(self.active_bosses()) * 2
+
     def _on_item_changed(self, item):
         self._update_count()
         col = item.column()
@@ -732,23 +708,20 @@ class MainWindow(QMainWindow):
 
     def _update_total(self, row: int):
         """그 행의 보스 딜량 합을 '시즌 종합 딜량' 칸에 다시 쓴다(읽기전용)."""
-        bosses = self.active_bosses()
-        total = 0
-        col = 1
-        for _ in bosses:
-            total += self._cell_int(row, col + 1)
-            col += 2
+        n = len(self.active_bosses())
+        total = sum(self._cell_int(row, 2 + i * 2) for i in range(n))
+        tcol = self._total_col()
         self.table.blockSignals(True)
-        cell = self.table.item(row, col)
+        cell = self.table.item(row, tcol)
         if cell is None:
-            self.table.setItem(row, col, self._readonly_item(f"{total:,}"))
+            self.table.setItem(row, tcol, self._readonly_item(f"{total:,}"))
         else:
             cell.setText(f"{total:,}")
         self.table.blockSignals(False)
 
     def _verify_order(self):
         """보스 합 딜량이 위→아래 내림차순인지 검증(게임 정렬과 일치해야 정상)."""
-        ncol = 1 + len(self.active_bosses()) * 2     # 시즌 종합 딜량 컬럼
+        ncol = self._total_col()                     # 시즌 종합 딜량 컬럼
         totals = []
         for r in range(self.table.rowCount()):
             item = self.table.item(r, 0)
@@ -782,19 +755,9 @@ class MainWindow(QMainWindow):
 
     # ----- 영역 설정 / 캡처 -----
     def _on_set_regions(self):
-        if not self.active_bosses():
-            QMessageBox.warning(self, "확인", "활성 보스를 먼저 체크하세요.")
-            return
         saved = load_regions()
         initial = saved["boxes"] if saved else None
-        rh = saved.get("row_height") if saved else None
-        self._editor = RegionEditor(
-            cells_for(self.active_bosses()),
-            initial,
-            1,  # 표 1박스 — 줄 미리보기 불필요(캡처 시 자동 검출)
-            rh,
-            self._on_regions_saved,
-        )
+        self._editor = RegionEditor(cells_for(), initial, self._on_regions_saved)
         self._editor.show()
 
     def _on_regions_saved(self, data):
