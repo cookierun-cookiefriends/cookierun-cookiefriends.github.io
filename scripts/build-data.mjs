@@ -17,6 +17,28 @@ fs.mkdirSync(path.join(OUT, 'players'), { recursive: true });
 const seasons = readJson(path.join(SRC, 'seasons.json'));
 const meta = readJson(path.join(SRC, 'meta.json'));
 
+// records 폴더를 스캔해 라운드를 자동 등록 — records/{시즌ID}.json만 넣으면 사이트에 반영.
+// 라운드 이름은 큰 시즌 이름 + '-번호' (예: "비상하는 운명의 시즌 30" + "-4").
+const recordIds = fs
+  .readdirSync(path.join(SRC, 'records'))
+  .filter((f) => f.endsWith('.json'))
+  .map((f) => f.replace(/\.json$/, ''));
+for (const roundId of recordIds) {
+  const seasonId = roundId.split('-')[0];
+  const season = seasons.find((s) => s.id === seasonId);
+  if (!season) continue; // 큰 시즌이 seasons.json에 없으면 건너뜀
+  season.rounds ??= [];
+  if (!season.rounds.some((r) => r.id === roundId)) {
+    const roundNum = roundId.slice(seasonId.length + 1);
+    season.rounds.push({ id: roundId, name: `${season.name}-${roundNum}` });
+  }
+}
+for (const season of seasons) {
+  season.rounds.sort((a, b) =>
+    a.id.localeCompare(b.id, undefined, { numeric: true }),
+  );
+}
+
 // 라운드 평탄화 + 라운드 → 큰 시즌 매핑
 const allRounds = [];
 const roundToSeason = {};

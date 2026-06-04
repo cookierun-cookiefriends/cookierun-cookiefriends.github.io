@@ -942,7 +942,8 @@ class MainWindow(QMainWindow):
             self,
             "완료",
             f"{out}\n\n{len(records)}명 저장됨.\n"
-            f"seasons.json 에 시즌 메타 추가 후 build:data 실행하세요.",
+            f"build:data 실행하면 자동 반영됩니다.\n"
+            f"(새 큰 시즌이면 seasons.json 에 시즌 id·이름만 추가)",
         )
 
 
