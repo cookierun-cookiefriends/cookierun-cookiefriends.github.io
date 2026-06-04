@@ -1,9 +1,9 @@
 name: Deploy to GitHub Pages
 
 on:
-  # 자동 트리거 없음 — push해도 사이트 안 바뀜.
-  # Actions → Run workflow에서 사용자가 원하는 branch 선택해서 trigger.
-  workflow_dispatch:
+  push:
+    branches: [main]   # main에 push하면 자동으로 빌드·배포 (다른 branch는 배포 안 함)
+  workflow_dispatch:   # 수동 실행도 가능 (특정 branch를 골라 배포할 때)
 
 permissions:
   contents: read
