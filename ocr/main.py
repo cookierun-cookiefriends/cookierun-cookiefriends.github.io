@@ -937,13 +937,44 @@ class MainWindow(QMainWindow):
         out.write_text(
             json.dumps(records, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
         )
+        self._save_season_meta(sid, self.season_name.text().strip())
         self.status.setText(f"저장됨: {out.name} ({len(records)}명)")
         QMessageBox.information(
             self,
             "완료",
             f"{out}\n\n{len(records)}명 저장됨.\n"
-            f"build:data 실행하면 자동 반영됩니다.\n"
-            f"(새 큰 시즌이면 seasons.json 에 시즌 id·이름만 추가)",
+            f"시즌 이름도 seasons.json 에 저장했어요.\n"
+            f"build:data 실행하면 자동 반영됩니다.",
+        )
+
+    def _save_season_meta(self, sid, season_name):
+        """입력한 시즌 이름을 seasons.json 의 큰 시즌(id·이름)에 저장/갱신.
+
+        season_name(예 '비상하는 운명의 시즌 30-4')에서 라운드 번호를 떼어
+        큰 시즌 이름('비상하는 운명의 시즌 30')으로 쓴다. 큰 시즌 이름을 직접 적었으면 그대로.
+        """
+        if not season_name:
+            return
+        season_id = sid.split("-")[0]
+        round_num = sid[len(season_id) + 1:] if "-" in sid else ""
+        big_name = season_name
+        if round_num and season_name.endswith(f"-{round_num}"):
+            big_name = season_name[: -(len(round_num) + 1)].rstrip()
+        path = REPO_ROOT / "data-source" / "seasons.json"
+        try:
+            seasons = (
+                json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
+            )
+        except Exception:
+            seasons = []
+        s = next((x for x in seasons if x.get("id") == season_id), None)
+        if s is None:
+            seasons.append({"id": season_id, "name": big_name})
+        else:
+            s["name"] = big_name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(seasons, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
         )
 
 

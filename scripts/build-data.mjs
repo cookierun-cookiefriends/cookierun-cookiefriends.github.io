@@ -25,14 +25,20 @@ const recordIds = fs
   .map((f) => f.replace(/\.json$/, ''));
 for (const roundId of recordIds) {
   const seasonId = roundId.split('-')[0];
-  const season = seasons.find((s) => s.id === seasonId);
-  if (!season) continue; // 큰 시즌이 seasons.json에 없으면 건너뜀
+  let season = seasons.find((s) => s.id === seasonId);
+  if (!season) {
+    // 큰 시즌이 seasons.json에 없으면 자동 생성. 이름은 임시("시즌 31")이며,
+    // 정확한 이름을 쓰려면 seasons.json에 { "id": "31", "name": "..." }만 적으면 적용된다.
+    season = { id: seasonId, name: `시즌 ${seasonId}` };
+    seasons.push(season);
+  }
   season.rounds ??= [];
   if (!season.rounds.some((r) => r.id === roundId)) {
     const roundNum = roundId.slice(seasonId.length + 1);
     season.rounds.push({ id: roundId, name: `${season.name}-${roundNum}` });
   }
 }
+seasons.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
 for (const season of seasons) {
   season.rounds.sort((a, b) =>
     a.id.localeCompare(b.id, undefined, { numeric: true }),
