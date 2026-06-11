@@ -4,6 +4,7 @@ import {
   fetchMeta,
   fetchRound,
   fetchPatchnotes,
+  fetchNotice,
 } from '@/lib/data';
 
 export const useIndex = () =>
@@ -21,3 +22,6 @@ export const useRound = (id: string | undefined) =>
 
 export const usePatchnotes = () =>
   useQuery({ queryKey: ['patchnotes'], queryFn: fetchPatchnotes });
+
+export const useNotice = () =>
+  useQuery({ queryKey: ['notice'], queryFn: fetchNotice });

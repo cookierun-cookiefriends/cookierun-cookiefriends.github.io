@@ -91,3 +91,15 @@ export const fetchMeta = () => fetchJson<Meta>('data/meta.json');
 export const fetchRound = (id: string) =>
   fetchJson<RoundData>(`data/rounds/${encodeURIComponent(id)}.json`);
 export const fetchPatchnotes = () => fetchJson<Patchnotes>('patchnotes.json');
+
+// 공지 — 사이트 진입 시 1회 모달. id가 바뀌면 모두에게 다시 표시(localStorage로 본 공지 기억).
+export interface Notice {
+  active: boolean;
+  id: string;
+  date?: string;
+  title?: string;
+  body?: string;
+  link?: { url: string; label: string };
+  warning?: string;
+}
+export const fetchNotice = () => fetchJson<Notice>('notice.json');

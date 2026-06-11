@@ -2,6 +2,7 @@ import { Outlet, NavLink } from 'react-router-dom';
 import { Swords, ScrollText, Settings as SettingsIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { NoticeBanner } from '@/components/NoticeBanner';
 
 const navItems = [
   { to: '/', icon: Swords, label: '토벌전' },
@@ -70,6 +71,8 @@ export default function Layout() {
           </NavLink>
         ))}
       </nav>
+
+      <NoticeBanner />
     </div>
   );
 }
