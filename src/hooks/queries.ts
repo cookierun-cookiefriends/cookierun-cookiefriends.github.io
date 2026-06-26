@@ -5,6 +5,7 @@ import {
   fetchRound,
   fetchPatchnotes,
   fetchNotice,
+  fetchPlayer,
 } from '@/lib/data';
 
 export const useIndex = () =>
@@ -25,3 +26,10 @@ export const usePatchnotes = () =>
 
 export const useNotice = () =>
   useQuery({ queryKey: ['notice'], queryFn: fetchNotice });
+
+export const usePlayer = (nickname: string | null) =>
+  useQuery({
+    queryKey: ['player', nickname],
+    queryFn: () => fetchPlayer(nickname!),
+    enabled: !!nickname,
+  });

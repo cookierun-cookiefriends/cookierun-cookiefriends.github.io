@@ -103,3 +103,19 @@ export interface Notice {
   warning?: string;
 }
 export const fetchNotice = () => fetchJson<Notice>('notice.json');
+
+// 플레이어 history — 닉네임별 전체 시즌 기록 (build-data가 players/{닉}.json 생성)
+export interface PlayerHistoryEntry {
+  roundId: string;
+  roundName: string;
+  seasonId: string;
+  seasonName: string;
+  activeBosses: BossId[];
+  bosses: PlayerBosses;
+}
+export interface PlayerData {
+  nickname: string;
+  history: PlayerHistoryEntry[];
+}
+export const fetchPlayer = (nickname: string) =>
+  fetchJson<PlayerData>(`data/players/${encodeURIComponent(nickname)}.json`);

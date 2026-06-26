@@ -1,11 +1,12 @@
 import { Outlet, NavLink } from 'react-router-dom';
-import { Swords, ScrollText, Settings as SettingsIcon } from 'lucide-react';
+import { Home as HomeIcon, Swords, ScrollText, Settings as SettingsIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { NoticeBanner } from '@/components/NoticeBanner';
 
 const navItems = [
-  { to: '/', icon: Swords, label: '토벌전' },
+  { to: '/', icon: HomeIcon, label: '홈' },
+  { to: '/guild', icon: Swords, label: '토벌전' },
   { to: '/patchnotes', icon: ScrollText, label: '패치노트' },
   { to: '/settings', icon: SettingsIcon, label: '설정' },
 ];

@@ -1,4 +1,7 @@
+import { useState } from 'react';
 import { useThemeStore } from '@/stores/theme';
+import { useNicknameStore } from '@/stores/nickname';
+import { useIndex } from '@/hooks/queries';
 import { THEME_OPTIONS } from '@/components/theme-toggle';
 import { cn } from '@/lib/utils';
 
@@ -13,9 +16,11 @@ export default function Settings() {
           설정
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          화면 모양을 바꿀 수 있습니다
+          닉네임과 화면 모양을 바꿀 수 있습니다
         </p>
       </header>
+
+      <NicknameSection />
 
       <section className="rounded-2xl border border-border bg-card p-5 md:p-6 space-y-4 shadow-sm">
         <div>
@@ -60,5 +65,63 @@ export default function Settings() {
         </div>
       </section>
     </div>
+  );
+}
+
+function NicknameSection() {
+  const nickname = useNicknameStore((s) => s.nickname);
+  const setNickname = useNicknameStore((s) => s.setNickname);
+  const { data: index } = useIndex();
+  const [input, setInput] = useState(nickname ?? '');
+
+  const players = index?.players ?? [];
+  const trimmed = input.trim();
+  const valid = players.includes(trimmed);
+
+  return (
+    <section className="rounded-2xl border border-border bg-card p-5 md:p-6 space-y-4 shadow-sm">
+      <div>
+        <h2 className="text-sm font-semibold tracking-tight">내 닉네임</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {nickname
+            ? `현재: ${nickname}`
+            : '등록하면 홈에서 내 기록·순위·추이를 볼 수 있어요'}
+        </p>
+      </div>
+      <div className="flex flex-col sm:flex-row gap-2">
+        <input
+          list="cf-settings-players"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="닉네임 입력"
+          className="flex-1 rounded-xl border border-border bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring/40"
+        />
+        <datalist id="cf-settings-players">
+          {players.map((p) => (
+            <option key={p} value={p} />
+          ))}
+        </datalist>
+        <button
+          type="button"
+          disabled={!valid || trimmed === nickname}
+          onClick={() => setNickname(trimmed)}
+          className="rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
+        >
+          저장
+        </button>
+        {nickname && (
+          <button
+            type="button"
+            onClick={() => {
+              setNickname(null);
+              setInput('');
+            }}
+            className="rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground"
+          >
+            해제
+          </button>
+        )}
+      </div>
+    </section>
   );
 }
