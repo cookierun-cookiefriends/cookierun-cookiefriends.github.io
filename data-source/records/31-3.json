@@ -1,0 +1,548 @@
+[
+  {
+    "nickname": "설화툰",
+    "bosses": {
+      "dragon": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "angel": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "machine": {
+        "attempts": 9,
+        "damage": 236243265763
+      },
+      "licorice": {
+        "attempts": 9,
+        "damage": 316094177904
+      }
+    }
+  },
+  {
+    "nickname": "미고타르트",
+    "bosses": {
+      "dragon": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "angel": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "machine": {
+        "attempts": 9,
+        "damage": 250573706816
+      },
+      "licorice": {
+        "attempts": 9,
+        "damage": 291313291482
+      }
+    }
+  },
+  {
+    "nickname": "탈네오탈한공",
+    "bosses": {
+      "dragon": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "angel": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "machine": {
+        "attempts": 9,
+        "damage": 217448192880
+      },
+      "licorice": {
+        "attempts": 9,
+        "damage": 282897083769
+      }
+    }
+  },
+  {
+    "nickname": "상인이요",
+    "bosses": {
+      "dragon": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "angel": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "machine": {
+        "attempts": 9,
+        "damage": 238514098429
+      },
+      "licorice": {
+        "attempts": 9,
+        "damage": 258574191915
+      }
+    }
+  },
+  {
+    "nickname": "크림치즈맛페럿",
+    "bosses": {
+      "dragon": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "angel": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "machine": {
+        "attempts": 9,
+        "damage": 185525151902
+      },
+      "licorice": {
+        "attempts": 9,
+        "damage": 300217192161
+      }
+    }
+  },
+  {
+    "nickname": "믕빔",
+    "bosses": {
+      "dragon": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "angel": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "machine": {
+        "attempts": 9,
+        "damage": 250468274408
+      },
+      "licorice": {
+        "attempts": 9,
+        "damage": 235216466135
+      }
+    }
+  },
+  {
+    "nickname": "흑굴닌자",
+    "bosses": {
+      "dragon": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "angel": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "machine": {
+        "attempts": 9,
+        "damage": 204887836151
+      },
+      "licorice": {
+        "attempts": 9,
+        "damage": 263070849079
+      }
+    }
+  },
+  {
+    "nickname": "몽코비는야옹",
+    "bosses": {
+      "dragon": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "angel": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "machine": {
+        "attempts": 9,
+        "damage": 219442500777
+      },
+      "licorice": {
+        "attempts": 9,
+        "damage": 222162055651
+      }
+    }
+  },
+  {
+    "nickname": "사계절이와",
+    "bosses": {
+      "dragon": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "angel": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "machine": {
+        "attempts": 9,
+        "damage": 200110559732
+      },
+      "licorice": {
+        "attempts": 9,
+        "damage": 220345661450
+      }
+    }
+  },
+  {
+    "nickname": "튜무룩",
+    "bosses": {
+      "dragon": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "angel": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "machine": {
+        "attempts": 9,
+        "damage": 163882517779
+      },
+      "licorice": {
+        "attempts": 9,
+        "damage": 253848573373
+      }
+    }
+  },
+  {
+    "nickname": "듀옹",
+    "bosses": {
+      "dragon": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "angel": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "machine": {
+        "attempts": 9,
+        "damage": 214178152381
+      },
+      "licorice": {
+        "attempts": 9,
+        "damage": 159586607268
+      }
+    }
+  },
+  {
+    "nickname": "썬남썬녀89",
+    "bosses": {
+      "dragon": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "angel": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "machine": {
+        "attempts": 9,
+        "damage": 174983474278
+      },
+      "licorice": {
+        "attempts": 9,
+        "damage": 194954736691
+      }
+    }
+  },
+  {
+    "nickname": "써니네",
+    "bosses": {
+      "dragon": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "angel": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "machine": {
+        "attempts": 9,
+        "damage": 174562334814
+      },
+      "licorice": {
+        "attempts": 9,
+        "damage": 175255653128
+      }
+    }
+  },
+  {
+    "nickname": "SYuqi0923",
+    "bosses": {
+      "dragon": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "angel": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "machine": {
+        "attempts": 9,
+        "damage": 196870196391
+      },
+      "licorice": {
+        "attempts": 9,
+        "damage": 148033340746
+      }
+    }
+  },
+  {
+    "nickname": "바닐라팁스",
+    "bosses": {
+      "dragon": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "angel": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "machine": {
+        "attempts": 9,
+        "damage": 139676958284
+      },
+      "licorice": {
+        "attempts": 9,
+        "damage": 181558073749
+      }
+    }
+  },
+  {
+    "nickname": "불개미",
+    "bosses": {
+      "dragon": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "angel": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "machine": {
+        "attempts": 9,
+        "damage": 142310617801
+      },
+      "licorice": {
+        "attempts": 9,
+        "damage": 174894549113
+      }
+    }
+  },
+  {
+    "nickname": "유신",
+    "bosses": {
+      "dragon": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "angel": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "machine": {
+        "attempts": 9,
+        "damage": 162414106660
+      },
+      "licorice": {
+        "attempts": 9,
+        "damage": 142177769693
+      }
+    }
+  },
+  {
+    "nickname": "제닌",
+    "bosses": {
+      "dragon": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "angel": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "machine": {
+        "attempts": 9,
+        "damage": 178803033103
+      },
+      "licorice": {
+        "attempts": 9,
+        "damage": 120167700448
+      }
+    }
+  },
+  {
+    "nickname": "Parkwawa",
+    "bosses": {
+      "dragon": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "angel": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "machine": {
+        "attempts": 9,
+        "damage": 87673257628
+      },
+      "licorice": {
+        "attempts": 9,
+        "damage": 154959610694
+      }
+    }
+  },
+  {
+    "nickname": "크림뷔레렐레레",
+    "bosses": {
+      "dragon": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "angel": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "machine": {
+        "attempts": 9,
+        "damage": 126747144723
+      },
+      "licorice": {
+        "attempts": 9,
+        "damage": 101954198357
+      }
+    }
+  },
+  {
+    "nickname": "호빵맨짱",
+    "bosses": {
+      "dragon": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "angel": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "machine": {
+        "attempts": 9,
+        "damage": 110375930338
+      },
+      "licorice": {
+        "attempts": 9,
+        "damage": 101550688322
+      }
+    }
+  },
+  {
+    "nickname": "노지혜남편",
+    "bosses": {
+      "dragon": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "angel": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "machine": {
+        "attempts": 9,
+        "damage": 177821162576
+      },
+      "licorice": {
+        "attempts": 0,
+        "damage": 0
+      }
+    }
+  },
+  {
+    "nickname": "밍쿠판다",
+    "bosses": {
+      "dragon": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "angel": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "machine": {
+        "attempts": 9,
+        "damage": 114534130644
+      },
+      "licorice": {
+        "attempts": 9,
+        "damage": 47581363305
+      }
+    }
+  },
+  {
+    "nickname": "먹거리고을",
+    "bosses": {
+      "dragon": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "angel": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "machine": {
+        "attempts": 9,
+        "damage": 133770454427
+      },
+      "licorice": {
+        "attempts": 9,
+        "damage": 3844748645
+      }
+    }
+  },
+  {
+    "nickname": "뚱냥춘식",
+    "bosses": {
+      "dragon": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "angel": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "machine": {
+        "attempts": 9,
+        "damage": 87555669500
+      },
+      "licorice": {
+        "attempts": 9,
+        "damage": 47271151712
+      }
+    }
+  },
+  {
+    "nickname": "VAKLV",
+    "bosses": {
+      "dragon": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "angel": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "machine": {
+        "attempts": 0,
+        "damage": 0
+      },
+      "licorice": {
+        "attempts": 0,
+        "damage": 0
+      }
+    }
+  }
+]
