@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import { useQueries } from '@tanstack/react-query';
 import { useIndex, useRound, useMeta } from '@/hooks/queries';
@@ -601,13 +602,13 @@ function PlayerPanel({
     />
   );
 
-  return (
+  return createPortal(
     <>
       {/* Overlay */}
       <div
         onClick={onClose}
         className={cn(
-          'fixed inset-0 z-[55] bg-background/70 backdrop-blur-sm transition-opacity duration-200',
+          'fixed inset-0 z-[55] bg-background/80 backdrop-blur-md transition-opacity duration-200',
           open ? 'opacity-100' : 'pointer-events-none opacity-0',
         )}
       />
@@ -633,7 +634,8 @@ function PlayerPanel({
       >
         {inner}
       </div>
-    </>
+    </>,
+    document.body,
   );
 }
 
