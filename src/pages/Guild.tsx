@@ -1,10 +1,17 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import { useQueries } from '@tanstack/react-query';
-import { useIndex, useRound, useMeta } from '@/hooks/queries';
+import { useIndex, useRound, useMeta, usePlayer } from '@/hooks/queries';
 import { fetchRound } from '@/lib/data';
-import type { BossId, BossRecord, PlayerRecord, Meta, RoundData } from '@/lib/data';
+import type {
+  BossId,
+  BossRecord,
+  PlayerRecord,
+  Meta,
+  RoundData,
+  PlayerHistoryEntry,
+} from '@/lib/data';
 import {
   Search,
   ArrowUpDown,
@@ -15,9 +22,11 @@ import {
   Minus,
   X,
   ChevronDown,
+  Trophy,
 } from 'lucide-react';
 import { cn, formatDamage, totalDamage, calcChange, type ChangeInfo } from '@/lib/utils';
 import { BossDot } from '@/components/BossDot';
+import { BossTrendChart } from '@/components/BossTrendChart';
 
 type SortKey = 'total' | BossId | 'name';
 type SortDir = 'asc' | 'desc';
@@ -188,6 +197,13 @@ export default function Guild() {
       selectedBossPrev[bid] = prevByBoss.get(bid)?.get(selected)?.bosses[bid];
     }
   }
+  const guildSize = round?.records.length ?? 0;
+  const selectedRank =
+    selected && round
+      ? [...round.records]
+          .sort((a, b) => totalDamage(b) - totalDamage(a))
+          .findIndex((r) => r.nickname === selected) + 1
+      : 0;
 
   return (
     <div className="p-6 md:p-10 lg:p-12 space-y-7 max-w-[1400px]">
@@ -416,6 +432,8 @@ export default function Guild() {
         activeBosses={activeBosses}
         meta={meta}
         mode={damageMode}
+        rank={selectedRank}
+        guildSize={guildSize}
         onClose={() => setSelected(null)}
       />
     </div>
@@ -574,6 +592,8 @@ function PlayerPanel({
   activeBosses,
   meta,
   mode,
+  rank,
+  guildSize,
   onClose,
 }: {
   open: boolean;
@@ -584,9 +604,13 @@ function PlayerPanel({
   activeBosses: BossId[];
   meta?: Meta;
   mode: 'korean' | 'comma';
+  rank: number;
+  guildSize: number;
   onClose: () => void;
 }) {
+  const { data: player } = usePlayer(open ? nickname : null);
   const total = record ? totalDamage(record) : 0;
+  const history = player?.history ?? [];
 
   const inner = (
     <PanelInner
@@ -598,6 +622,9 @@ function PlayerPanel({
       meta={meta}
       mode={mode}
       total={total}
+      rank={rank}
+      guildSize={guildSize}
+      history={history}
       onClose={onClose}
     />
   );
@@ -613,18 +640,18 @@ function PlayerPanel({
         )}
       />
 
-      {/* PC: 오른쪽 슬라이드 */}
-      <aside
+      {/* PC: 거의 전체화면 모달 (2단) */}
+      <div
         className={cn(
-          'hidden md:flex md:flex-col fixed z-[60] top-0 right-0 h-full w-[420px] border-l border-border bg-card shadow-2xl transition-transform duration-300 ease-out',
-          open ? 'translate-x-0' : 'translate-x-full',
+          'hidden md:flex md:flex-col fixed z-[60] left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[calc(100%-4rem)] h-[calc(100%-4rem)] max-w-7xl rounded-2xl border border-border bg-card shadow-2xl transition-all duration-200 ease-out',
+          open ? 'opacity-100 scale-100' : 'pointer-events-none opacity-0 scale-95',
         )}
         aria-hidden={!open}
       >
         {inner}
-      </aside>
+      </div>
 
-      {/* 모바일: 중앙 모달 */}
+      {/* 모바일: 중앙 모달 (탭) */}
       <div
         className={cn(
           'md:hidden fixed z-[60] left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[calc(100%-2rem)] max-w-md max-h-[85vh] flex flex-col rounded-2xl border border-border bg-card shadow-2xl transition-all duration-200 ease-out',
@@ -648,6 +675,9 @@ function PanelInner({
   meta,
   mode,
   total,
+  rank,
+  guildSize,
+  history,
   onClose,
 }: {
   nickname: string;
@@ -658,8 +688,102 @@ function PanelInner({
   meta?: Meta;
   mode: 'korean' | 'comma';
   total: number;
+  rank: number;
+  guildSize: number;
+  history: PlayerHistoryEntry[];
   onClose: () => void;
 }) {
+  const [tab, setTab] = useState<'record' | 'trend'>('record');
+
+  const trendBossIds = (meta?.bossOrder ?? []).filter((bid) =>
+    history.some((h) => h.activeBosses.includes(bid)),
+  );
+  const hasTrend = !!meta && trendBossIds.length > 0 && history.length > 1;
+
+  const summaryEl = (
+    <div className="grid grid-cols-2 gap-3">
+      <div className="rounded-2xl bg-muted/40 p-4">
+        <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
+          총합
+        </p>
+        <p className="mt-1 text-xl font-bold tabular-nums">
+          {total > 0 ? formatDamage(total, mode, true) : '-'}
+        </p>
+      </div>
+      <div className="rounded-2xl bg-muted/40 p-4">
+        <p className="flex items-center gap-1 text-[11px] uppercase tracking-wider text-muted-foreground">
+          <Trophy className="h-3 w-3" /> 길드 순위
+        </p>
+        <p className="mt-1 text-xl font-bold tabular-nums">
+          {rank ? `${rank}위` : '-'}
+          {guildSize > 0 && (
+            <span className="ml-1 text-xs font-normal text-muted-foreground">
+              / {guildSize}
+            </span>
+          )}
+        </p>
+      </div>
+    </div>
+  );
+
+  const bossListEl = record ? (
+    <section className="space-y-2">
+      <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
+        보스별 기록
+      </p>
+      <div className="space-y-2">
+        {activeBosses.map((bid) => (
+          <div
+            key={bid}
+            className="rounded-xl border border-border/60 bg-background p-3"
+          >
+            <div className="flex items-center gap-2">
+              <BossDot bid={bid} />
+              <span className="text-sm font-medium">
+                {meta?.bosses[bid]?.name}
+              </span>
+            </div>
+            <div className="mt-2">
+              <BossCell
+                bid={bid}
+                meta={meta}
+                attempts={record.bosses[bid].attempts}
+                damage={record.bosses[bid].damage}
+                prev={bossPrev[bid]}
+                mode={mode}
+                compact
+                full
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  ) : null;
+
+  const trendEl = hasTrend ? (
+    <div className="grid grid-cols-1 gap-3">
+      {trendBossIds.map((bid) => {
+        const data = history
+          .filter((h) => h.activeBosses.includes(bid))
+          .map((h) => ({ name: h.roundId, 딜량: h.bosses[bid].damage }));
+        return (
+          <BossTrendChart
+            key={bid}
+            name={meta.bosses[bid].name}
+            color={meta.bosses[bid].color}
+            data={data}
+            height="h-44 lg:h-52"
+          />
+        );
+      })}
+    </div>
+  ) : (
+    <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+      추이를 보려면 2시즌 이상 기록이 필요해요.
+    </p>
+  );
+
   return (
     <>
       <header className="flex items-start justify-between gap-3 px-6 py-5 border-b border-border">
@@ -679,55 +803,58 @@ function PanelInner({
         </button>
       </header>
 
-      <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-        {/* 총합 */}
-        <section className="rounded-2xl bg-muted/40 p-4">
-          <p className="text-xs uppercase tracking-wider text-muted-foreground">
-            총합
+      {/* PC: 2단 (왼쪽 요약·보스별 / 오른쪽 추이) */}
+      <div className="hidden md:grid md:grid-cols-2 gap-6 flex-1 overflow-y-auto px-6 py-5">
+        <div className="space-y-5">
+          {summaryEl}
+          {bossListEl}
+        </div>
+        <div className="space-y-2">
+          <p className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-muted-foreground">
+            <TrendingUp className="h-3.5 w-3.5" /> 시즌별 추이 · 보스별
           </p>
-          <div className="mt-1 flex items-end gap-2">
-            <span className="text-2xl font-bold tabular-nums">
-              {total > 0 ? formatDamage(total, mode, true) : '-'}
-            </span>
-          </div>
-        </section>
+          {trendEl}
+        </div>
+      </div>
 
-        {/* 보스별 */}
-        {record && (
-          <section className="space-y-2">
-            <p className="text-xs uppercase tracking-wider text-muted-foreground">
-              보스별 기록
-            </p>
-            <div className="space-y-2">
-              {activeBosses.map((bid) => (
-                <div
-                  key={bid}
-                  className="rounded-xl border border-border/60 bg-background p-3"
-                >
-                  <div className="flex items-center gap-2">
-                    <BossDot bid={bid} />
-                    <span className="text-sm font-medium">
-                      {meta?.bosses[bid]?.name}
-                    </span>
-                  </div>
-                  <div className="mt-2">
-                    <BossCell
-                      bid={bid}
-                      meta={meta}
-                      attempts={record.bosses[bid].attempts}
-                      damage={record.bosses[bid].damage}
-                      prev={bossPrev[bid]}
-                      mode={mode}
-                      compact
-                      full
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
+      {/* 모바일: 요약 + 탭 */}
+      <div className="md:hidden flex-1 overflow-y-auto px-5 py-4 space-y-4">
+        {summaryEl}
+        <div className="flex gap-1 rounded-xl bg-muted/40 p-1">
+          <TabBtn active={tab === 'record'} onClick={() => setTab('record')}>
+            보스별 기록
+          </TabBtn>
+          <TabBtn active={tab === 'trend'} onClick={() => setTab('trend')}>
+            시즌 추이
+          </TabBtn>
+        </div>
+        {tab === 'record' ? bossListEl : trendEl}
       </div>
     </>
+  );
+}
+
+function TabBtn({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+        active
+          ? 'bg-card text-foreground shadow-sm'
+          : 'text-muted-foreground hover:text-foreground',
+      )}
+    >
+      {children}
+    </button>
   );
 }
