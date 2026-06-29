@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
 import { useQueries } from '@tanstack/react-query';
 import { useIndex, useRound, useMeta, usePlayer } from '@/hooks/queries';
 import { fetchRound } from '@/lib/data';
@@ -62,7 +62,16 @@ export default function Guild() {
       ) ?? [],
     [index],
   );
-  const allRoundsReversed = useMemo(() => [...allRounds].reverse(), [allRounds]);
+  // 시즌 선택 2단: 앞(큰 시즌) → 뒤(그 시즌의 세부 시즌)
+  const seasonsReversed = useMemo(
+    () => [...(index?.seasons ?? [])].reverse(),
+    [index],
+  );
+  const currentSeasonId = round?.season.id;
+  const currentRoundsReversed = useMemo(() => {
+    const s = index?.seasons.find((x) => x.id === currentSeasonId);
+    return s ? [...s.rounds].reverse() : [];
+  }, [index, currentSeasonId]);
 
   const currentIdx = allRounds.findIndex((r) => r.id === activeRoundId);
 
@@ -216,19 +225,49 @@ export default function Guild() {
             시즌별 길드원 딜량 기록 · 이전 활성 시즌 대비 증감률
           </p>
         </div>
-        <div className="relative">
-          <select
-            value={activeRoundId ?? ''}
-            onChange={(e) => setSearchParams({ round: e.target.value })}
-            className="appearance-none rounded-xl border border-border bg-card pl-4 pr-12 py-2.5 text-sm md:text-base font-medium shadow-sm focus:outline-none focus:ring-2 focus:ring-ring/40 cursor-pointer"
-          >
-            {allRoundsReversed.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name}
-              </option>
-            ))}
-          </select>
-          <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+        <div className="flex items-center gap-2">
+          {round && (
+            <Link
+              to={`/season/${round.season.id}`}
+              className="rounded-xl border border-border px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground"
+            >
+              시즌 종합
+            </Link>
+          )}
+          {/* 앞: 큰 시즌 */}
+          <div className="relative">
+            <select
+              value={currentSeasonId ?? ''}
+              onChange={(e) => {
+                const s = index?.seasons.find((x) => x.id === e.target.value);
+                const last = s?.rounds[s.rounds.length - 1];
+                if (last) setSearchParams({ round: last.id });
+              }}
+              className="appearance-none rounded-xl border border-border bg-card pl-4 pr-10 py-2.5 text-sm md:text-base font-medium shadow-sm focus:outline-none focus:ring-2 focus:ring-ring/40 cursor-pointer"
+            >
+              {seasonsReversed.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          </div>
+          {/* 뒤: 세부 시즌 */}
+          <div className="relative">
+            <select
+              value={activeRoundId ?? ''}
+              onChange={(e) => setSearchParams({ round: e.target.value })}
+              className="appearance-none rounded-xl border border-border bg-card pl-4 pr-10 py-2.5 text-sm md:text-base font-medium shadow-sm focus:outline-none focus:ring-2 focus:ring-ring/40 cursor-pointer"
+            >
+              {currentRoundsReversed.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.id}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          </div>
         </div>
       </header>
 
